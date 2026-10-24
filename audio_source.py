@@ -24,21 +24,31 @@ def find_ffmpeg_executable() -> str:
 
 FFMPEG_EXECUTABLE = find_ffmpeg_executable()
 
-# Konfigurasi yt-dlp untuk stabilitas streaming audio tinggi
+class YTDLLogger:
+    def debug(self, msg):
+        pass
+    def warning(self, msg):
+        pass
+    def error(self, msg):
+        pass
+
+# Konfigurasi yt-dlp untuk stabilitas streaming audio tinggi dan dukungan playlist
 YTDL_OPTIONS = {
     'format': 'bestaudio/best',
     'extractaudio': True,
     'audioformat': 'mp3',
     'outtmpl': '%(extractor)s-%(id)s-%(title)s.%(ext)s',
     'restrictfilenames': True,
-    'noplaylist': True,
+    'noplaylist': False,
+    'extract_flat': 'in_playlist',
+    'ignoreerrors': True,
     'nocheckcertificate': True,
-    'ignoreerrors': False,
     'logtostderr': False,
     'quiet': True,
     'no_warnings': True,
     'default_search': 'ytsearch',
     'source_address': '0.0.0.0',
+    'logger': YTDLLogger(),
 }
 
 def build_ffmpeg_options(
@@ -120,17 +130,33 @@ class YTDLSource(discord.PCMVolumeTransformer):
     async def get_streamable_data(cls, webpage_or_id: str, *, loop: asyncio.AbstractEventLoop = None):
         """Mengekstrak stream URL langsung (audio direct URL) saat lagu akan diputar."""
         loop = loop or asyncio.get_event_loop()
-        # Ekstrak tanpa download=False dan force resolve formats
-        partial_extract = functools.partial(ytdl.extract_info, webpage_or_id, download=False)
-        data = await loop.run_in_executor(None, partial_extract)
-        if not data:
-            return None
-        if 'entries' in data:
-            entries = [e for e in data['entries'] if e is not None]
-            if not entries:
-                return None
-            data = entries[0]
-        return data
+        target_url = webpage_or_id
+        if "music.youtube.com" in target_url:
+            target_url = target_url.replace("music.youtube.com", "www.youtube.com")
+
+        def _fetch():
+            stream_opts = {
+                'format': 'bestaudio/best',
+                'extractaudio': True,
+                'audioformat': 'mp3',
+                'noplaylist': True,
+                'ignoreerrors': True,
+                'quiet': True,
+                'no_warnings': True,
+                'nocheckcertificate': True,
+                'logger': YTDLLogger(),
+            }
+            with yt_dlp.YoutubeDL(stream_opts) as ydl:
+                try:
+                    data = ydl.extract_info(target_url, download=False)
+                    if data and 'entries' in data:
+                        valid = [e for e in data['entries'] if e]
+                        return valid[0] if valid else None
+                    return data
+                except Exception:
+                    return None
+
+        return await loop.run_in_executor(None, _fetch)
 
     @classmethod
     async def create_source(cls, search: str, *, loop: asyncio.AbstractEventLoop = None, volume: float = 0.5):
@@ -168,15 +194,46 @@ class YTDLSource(discord.PCMVolumeTransformer):
         """Mencari hingga N lagu untuk fitur search & selection."""
         loop = loop or asyncio.get_event_loop()
         query = f"ytsearch{max_results}:{search}"
-        partial_extract = functools.partial(ytdl.extract_info, query, download=False)
-        data = await loop.run_in_executor(None, partial_extract)
-        if not data or 'entries' not in data:
-            return []
-        return [e for e in data['entries'] if e is not None]
+        
+        def _fetch():
+            search_opts = {
+                'format': 'bestaudio/best',
+                'extract_flat': True,
+                'ignoreerrors': True,
+                'quiet': True,
+                'no_warnings': True,
+                'nocheckcertificate': True,
+                'logger': YTDLLogger(),
+            }
+            with yt_dlp.YoutubeDL(search_opts) as ydl:
+                try:
+                    data = ydl.extract_info(query, download=False)
+                    if not data or 'entries' not in data:
+                        return []
+                    return [e for e in data['entries'] if e is not None]
+                except Exception:
+                    return []
+
+        return await loop.run_in_executor(None, _fetch)
 
     @classmethod
     async def extract_info(cls, search: str, *, loop: asyncio.AbstractEventLoop = None):
         """Mengekstrak informasi lagu atau playlist tanpa membuat AudioSource langsung."""
         loop = loop or asyncio.get_event_loop()
-        partial_extract = functools.partial(ytdl.extract_info, search, download=False)
-        return await loop.run_in_executor(None, partial_extract)
+        target = search
+        if "music.youtube.com" in target:
+            target = target.replace("music.youtube.com", "www.youtube.com")
+
+        def _fetch():
+            try:
+                return ytdl.extract_info(target, download=False)
+            except Exception:
+                try:
+                    fallback_opts = dict(YTDL_OPTIONS)
+                    fallback_opts['extract_flat'] = True
+                    with yt_dlp.YoutubeDL(fallback_opts) as ydl:
+                        return ydl.extract_info(target, download=False)
+                except Exception:
+                    return None
+
+        return await loop.run_in_executor(None, _fetch)
