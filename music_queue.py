@@ -6,11 +6,21 @@ import discord
 class Song:
     def __init__(self, data: dict, requester: discord.Member):
         self.data = data
-        self.title = data.get('title', 'Unknown Title')
-        self.url = data.get('webpage_url', '')
-        self.duration = data.get('duration', 0)
-        self.thumbnail = data.get('thumbnail', None)
-        self.uploader = data.get('uploader', 'Unknown Artist')
+        self.title = data.get('title') or data.get('track') or 'Unknown Title'
+        raw_url = data.get('webpage_url') or data.get('url') or ''
+        if raw_url and not raw_url.startswith('http'):
+            raw_url = f"https://www.youtube.com/watch?v={raw_url}"
+        elif not raw_url and data.get('id'):
+            raw_url = f"https://www.youtube.com/watch?v={data.get('id')}"
+        self.url = raw_url
+        self.duration = data.get('duration') or 0
+        
+        thumb = data.get('thumbnail')
+        if not thumb and data.get('thumbnails'):
+            thumb = data.get('thumbnails')[-1].get('url')
+        self.thumbnail = thumb
+        
+        self.uploader = data.get('uploader') or data.get('channel') or data.get('artist') or 'Unknown Artist'
         self.requester = requester
         self.start_time: float | None = None
         self.is_autoplay: bool = False
