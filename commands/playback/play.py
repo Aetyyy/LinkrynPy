@@ -71,23 +71,50 @@ class PlayCommand(commands.Cog):
         if not info:
             return await interaction.followup.send("❌ Lagu tidak ditemukan.")
 
-        raw_title = info.get('title', '')
-        uploader = info.get('uploader', '')
-        cat, kws = manager.detect_genre_keywords(raw_title, uploader)
-        state.preferred_genre_category = cat
-        state.preferred_genre_keywords = kws
-        state.prefetched_autoplay_song = None
+        is_playlist = 'entries' in info and (info.get('_type') == 'playlist' or isinstance(info.get('entries'), (list, tuple)))
 
-        if 'entries' in info and info.get('_type') == 'playlist':
-            entries = [e for e in info['entries'] if e]
-            for entry in entries:
+        if is_playlist:
+            raw_entries = info.get('entries', [])
+            entries = [e for e in raw_entries if e and not e.get('is_unavailable')]
+            if not entries:
+                return await interaction.followup.send("❌ Tidak ada lagu yang dapat diputar dalam playlist ini.")
+
+            first_song = None
+            for i, entry in enumerate(entries):
                 song = Song(entry, interaction.user)
+                if i == 0:
+                    first_song = song
                 state.add(song)
-            await interaction.followup.send(f"✅ Berhasil menambahkan **{len(entries)}** lagu dari playlist ke antrean.")
+
+            if first_song:
+                cat, kws = manager.detect_genre_keywords(first_song.title, first_song.uploader)
+                state.preferred_genre_category = cat
+                state.preferred_genre_keywords = kws
+            state.prefetched_autoplay_song = None
+
+            playlist_title = info.get('title') or "Playlist"
+            embed = discord.Embed(
+                title="📑 Playlist Ditambahkan ke Antrean",
+                description=f"**[{playlist_title}]({query})**\nMenambahkan **{len(entries)}** lagu ke dalam antrean.",
+                color=discord.Color.green()
+            )
+            thumb = None
+            if entries[0].get('thumbnail'):
+                thumb = entries[0].get('thumbnail')
+            elif entries[0].get('thumbnails'):
+                thumb = entries[0]['thumbnails'][-1].get('url')
+            if thumb:
+                embed.set_thumbnail(url=thumb)
+            embed.add_field(name="Total Antrean", value=f"{len(state.queue)} lagu", inline=True)
+            await interaction.followup.send(embed=embed)
         else:
             entry = info['entries'][0] if 'entries' in info else info
             song = Song(entry, interaction.user)
             state.add(song)
+            cat, kws = manager.detect_genre_keywords(song.title, song.uploader)
+            state.preferred_genre_category = cat
+            state.preferred_genre_keywords = kws
+            state.prefetched_autoplay_song = None
 
             if voice_client.is_playing() or voice_client.is_paused():
                 embed = discord.Embed(
