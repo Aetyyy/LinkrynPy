@@ -255,38 +255,53 @@ class QueuePageView(discord.ui.View):
     def get_embed(self) -> discord.Embed:
         state = self.cog.get_guild_state(self.guild_id)
         per_page = 10
-        total_pages = max(1, (len(state.queue) + per_page - 1) // per_page)
+        total_items = len(state.queue)
+        total_pages = max(1, (total_items + per_page - 1) // per_page)
         self.page = max(1, min(self.page, total_pages))
+
+        # Update button state (disable boundary buttons)
+        if len(self.children) >= 2:
+            self.children[0].disabled = (self.page <= 1)
+            self.children[1].disabled = (self.page >= total_pages)
+
         start_idx = (self.page - 1) * per_page
         end_idx = start_idx + per_page
 
         embed = discord.Embed(title="📜 Antrean Musik Server", color=discord.Color.purple())
 
+        current_info = ""
         if state.current:
             elapsed, bar = state.current.get_progress()
-            embed.add_field(
-                name="🎶 Sedang Diputar",
-                value=f"[{state.current.title}]({state.current.url})\n`{bar}` `{state.current.format_duration(elapsed)} / {state.current.format_duration()}` (oleh {state.current.requester.mention})",
-                inline=False
+            req_mention = state.current.requester.mention if hasattr(state.current.requester, 'mention') else 'User'
+            current_info = (
+                f"🎶 **Sedang Diputar:**\n"
+                f"[{state.current.title}]({state.current.url})\n"
+                f"`{bar}` `{state.current.format_duration(elapsed)} / {state.current.format_duration()}` (oleh {req_mention})\n\n"
             )
 
         queue_list = list(state.queue)[start_idx:end_idx]
         if queue_list:
-            desc = ""
+            desc = "**Daftar Antrean:**\n"
             for i, s in enumerate(queue_list, start=start_idx + 1):
-                desc += f"**{i}.** [{s.title}]({s.url}) | `{s.format_duration()}` (oleh {s.requester.display_name})\n"
-            embed.add_field(name="Daftar Antrean", value=desc, inline=False)
+                clean_t = s.title
+                if len(clean_t) > 55:
+                    clean_t = clean_t[:52] + "..."
+                req_disp = s.requester.display_name if hasattr(s.requester, 'display_name') else 'User'
+                desc += f"`{i}.` [{clean_t}]({s.url}) | `{s.format_duration()}` (oleh {req_disp})\n"
         else:
-            embed.add_field(name="Daftar Antrean", value="*Tidak ada lagu berikutnya.*", inline=False)
+            desc = "**Daftar Antrean:**\n*Tidak ada lagu berikutnya di antrean.*"
 
-        embed.set_footer(text=f"Halaman {self.page}/{total_pages} | Total: {len(state.queue)} lagu | Loop: {state.loop_mode.upper()}")
+        # Pakai embed.description (batas 4096 char) bukan add_field (batas 1024 char) agar tidak pernah 400 Bad Request
+        embed.description = (current_info + desc)[:4000]
+        embed.set_footer(text=f"Halaman {self.page}/{total_pages} | Total: {total_items} lagu | Loop: {state.loop_mode.upper()}")
         return embed
 
     @discord.ui.button(emoji="⬅️", style=discord.ButtonStyle.secondary)
     async def prev_page(self, interaction: discord.Interaction, button: discord.ui.Button):
         if self.page > 1:
             self.page -= 1
-        await interaction.response.edit_message(embed=self.get_embed(), view=self)
+        embed = self.get_embed()
+        await interaction.response.edit_message(embed=embed, view=self)
 
     @discord.ui.button(emoji="➡️", style=discord.ButtonStyle.secondary)
     async def next_page(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -294,4 +309,5 @@ class QueuePageView(discord.ui.View):
         total_pages = max(1, (len(state.queue) + 9) // 10)
         if self.page < total_pages:
             self.page += 1
-        await interaction.response.edit_message(embed=self.get_embed(), view=self)
+        embed = self.get_embed()
+        await interaction.response.edit_message(embed=embed, view=self)
