@@ -1,0 +1,66 @@
+# ==========================================
+# Linkryn V2 - .gitignore
+# ==========================================
+
+# Environment variables & secrets (CRUCIAL: Jangan pernah commit token bot!)
+.env
+.env.*
+!.env.example
+
+# Virtual Environments
+.venv/
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Distribution / packaging
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# IDEs & Text Editors
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+*.swp
+*.swo
+
+# Operating System files
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Logs & Temporary Media / Caches
+*.log
+logs/
+*.mp3
+*.mp4
+*.m4a
+*.webm
+*.opus
+*.wav
+cookies.txt
+*.cookies
+.cache/
