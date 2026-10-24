@@ -628,7 +628,7 @@ class MusicManager(commands.Cog):
                 audio_url = stream_data.get('url') if stream_data else None
 
                 if not audio_url:
-                    await text_channel.send(f"❌ Gagal mendapatkan stream audio untuk **{next_song.title}**.")
+                    await text_channel.send(f"⚠️ Lagu **{next_song.title}** tidak dapat diputar (video dibatasi/dihapus). Melanjutkan ke lagu berikutnya...")
                     self.play_next(guild, text_channel)
                     return
 
