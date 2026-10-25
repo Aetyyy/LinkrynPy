@@ -15,8 +15,11 @@ class PauseCommand(commands.Cog):
         if not vc or not vc.is_playing():
             return await interaction.response.send_message("❌ Tidak ada musik yang sedang diputar.", ephemeral=True)
         vc.pause()
-        await interaction.response.send_message("⏸️ Musik dijeda.")
         manager = self.get_manager()
+        state = manager.get_guild_state(interaction.guild_id)
+        if state and state.current:
+            state.current.pause()
+        await interaction.response.send_message("⏸️ Musik dijeda.")
         await manager.update_nowplaying_card(interaction.guild, interaction.channel)
 
 async def setup(bot: commands.Bot):

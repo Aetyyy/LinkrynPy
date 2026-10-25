@@ -17,7 +17,17 @@ class PlayCommand(commands.Cog):
     @app_commands.describe(query="Judul lagu, link YouTube, atau link Spotify")
     async def play(self, interaction: discord.Interaction, query: str):
         manager = self.get_manager()
-        voice_client = await manager.ensure_voice(interaction)
+        try:
+            voice_client = await manager.ensure_voice(interaction)
+        except Exception as e:
+            from music_manager import VoiceChannelProtectedError
+            if isinstance(e, VoiceChannelProtectedError):
+                return await interaction.response.send_message(
+                    f"❌ Bot sedang aktif memutar musik di channel **#{e.channel_name}** bersama pendengar lain. Kamu harus bergabung ke channel tersebut!",
+                    ephemeral=True
+                )
+            raise e
+
         if not voice_client:
             return await interaction.response.send_message("❌ Kamu harus berada di voice channel terlebih dahulu!", ephemeral=True)
 

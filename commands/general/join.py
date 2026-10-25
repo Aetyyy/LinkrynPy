@@ -12,17 +12,24 @@ class JoinCommand(commands.Cog):
             return await interaction.response.send_message("❌ Anda harus berada di voice channel terlebih dahulu!", ephemeral=True)
 
         channel = interaction.user.voice.channel
-        voice_client = interaction.guild.voice_client
+        manager = self.bot.get_cog("MusicManager")
+        if not manager:
+            return await interaction.response.send_message("❌ MusicManager tidak aktif.", ephemeral=True)
 
-        if voice_client:
-            if voice_client.channel.id != channel.id:
-                await voice_client.move_to(channel)
-                await interaction.response.send_message(f"🔊 Berpindah ke {channel.mention}.")
-            else:
-                await interaction.response.send_message(f"🔊 Sudah berada di {channel.mention}.", ephemeral=True)
-        else:
-            await channel.connect()
-            await interaction.response.send_message(f"🔊 Bergabung ke {channel.mention}!")
+        from music_manager import VoiceChannelProtectedError
+        try:
+            vc = await manager.join_or_move(channel, interaction.user.id)
+            await interaction.response.send_message(f"🔊 Terhubung ke {channel.mention}!")
+        except VoiceChannelProtectedError as e:
+            return await interaction.response.send_message(
+                f"❌ Bot sedang aktif digunakan di **#{e.channel_name}**. Anda harus bergabung ke channel tersebut!",
+                ephemeral=True
+            )
+        except Exception as e:
+            return await interaction.response.send_message(
+                f"❌ Gagal bergabung ke voice channel: {str(e)}",
+                ephemeral=True
+            )
 
 async def setup(bot: commands.Bot):
     await bot.add_cog(JoinCommand(bot))

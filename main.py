@@ -45,7 +45,12 @@ class MusicBot(commands.Bot):
 
         print(f"✨ Berhasil memuat {total_loaded} modular command cogs.")
 
-        # 3. Sinkronkan Slash Command secara global
+        # 3. Jalankan Spotify-style Web Dashboard Server (aiohttp)
+        from web_server import WebDashboard
+        self.web_dashboard = WebDashboard(self, host="0.0.0.0", port=5000)
+        await self.web_dashboard.start()
+
+        # 4. Sinkronkan Slash Command secara global
         print("🔄 Mendaftarkan Slash Commands ke Discord...")
         try:
             synced = await self.tree.sync()

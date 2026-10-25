@@ -8,6 +8,12 @@ from discord.ext import commands
 from audio_source import YTDLSource, build_ffmpeg_options, FFMPEG_EXECUTABLE
 from music_queue import MusicQueue, Song
 from ui_views import MusicControlView
+from database import db
+
+class VoiceChannelProtectedError(Exception):
+    def __init__(self, channel_name: str):
+        self.channel_name = channel_name
+        super().__init__(f"Bot sedang aktif memutar musik di channel #{channel_name}.")
 
 class MusicManager(commands.Cog):
     def __init__(self, bot: commands.Bot):
@@ -19,22 +25,91 @@ class MusicManager(commands.Cog):
             self.states[guild_id] = MusicQueue()
         return self.states[guild_id]
 
+    async def join_or_move(self, target_channel: discord.VoiceChannel | discord.StageChannel, user_id: int | None = None) -> discord.VoiceClient:
+        guild = target_channel.guild
+        state = self.get_guild_state(guild.id)
+        voice_client = guild.voice_client
+
+        if voice_client is not None:
+            if voice_client.is_connected():
+                if voice_client.channel and voice_client.channel.id == target_channel.id:
+                    if user_id:
+                        state.session_owner_id = user_id
+                    return voice_client
+
+                # Bot berada di channel lain: cek apakah ada pendengar manusia atau lagu aktif
+                if voice_client.channel:
+                    human_listeners = [m for m in voice_client.channel.members if not m.bot]
+                    if (voice_client.is_playing() or voice_client.is_paused() or len(state.queue) > 0) and len(human_listeners) > 0:
+                        raise VoiceChannelProtectedError(voice_client.channel.name)
+
+                # Channel sebelumnya sepi atau tidak ada musik, pindah ke channel target
+                await voice_client.move_to(target_channel)
+                if user_id:
+                    state.session_owner_id = user_id
+                return voice_client
+            else:
+                # Ghost / stale voice client: disconnect paksa terlebih dahulu
+                try:
+                    await voice_client.disconnect(force=True)
+                except Exception:
+                    pass
+
+        try:
+            voice_client = await target_channel.connect(reconnect=True, timeout=20.0)
+        except discord.ClientException:
+            voice_client = guild.voice_client
+            if voice_client and voice_client.channel and voice_client.channel.id != target_channel.id:
+                await voice_client.move_to(target_channel)
+
+        if user_id:
+            state.session_owner_id = user_id
+        return voice_client
+
     async def ensure_voice(self, interaction: discord.Interaction) -> discord.VoiceClient | None:
         user = interaction.user
-        guild = interaction.guild
-
         if not user.voice or not user.voice.channel:
             return None
 
-        target_channel = user.voice.channel
-        voice_client = guild.voice_client
+        return await self.join_or_move(user.voice.channel, user.id)
 
-        if voice_client is None:
-            voice_client = await target_channel.connect()
-        elif voice_client.channel != target_channel:
-            await voice_client.move_to(target_channel)
+    def get_safe_text_channel(self, guild: discord.Guild, preferred_channel: discord.abc.Messageable | None = None) -> discord.abc.Messageable | None:
+        vc = guild.voice_client
 
-        return voice_client
+        # Prioritas 1: Text chat di dalam Voice Channel tempat pengguna / bot berada
+        target_vc = None
+        if preferred_channel and isinstance(preferred_channel, (discord.VoiceChannel, discord.StageChannel)):
+            target_vc = preferred_channel
+        elif vc and vc.channel and isinstance(vc.channel, (discord.VoiceChannel, discord.StageChannel)):
+            target_vc = vc.channel
+
+        if target_vc and hasattr(target_vc, "permissions_for"):
+            perms = target_vc.permissions_for(guild.me)
+            if perms.send_messages and perms.embed_links:
+                return target_vc
+
+        # Prioritas 2: Text channel bertema musik / request (music, musik, req, request, bot, song, lagu)
+        music_keywords = ["music", "musik", "req", "request", "bot", "song", "lagu"]
+        for ch in guild.text_channels:
+            name_clean = ch.name.lower().replace("-", "").replace("_", "")
+            if any(kw in name_clean for kw in music_keywords):
+                perms = ch.permissions_for(guild.me)
+                if perms.send_messages and perms.embed_links:
+                    return ch
+
+        # Prioritas 3: Preferred channel jika valid
+        if preferred_channel and hasattr(preferred_channel, "permissions_for"):
+            perms = preferred_channel.permissions_for(guild.me)
+            if perms.send_messages and perms.embed_links:
+                return preferred_channel
+
+        # Prioritas 4: Text channel manapun yang memiliki izin kirim pesan & embed
+        for ch in guild.text_channels:
+            perms = ch.permissions_for(guild.me)
+            if perms.send_messages and perms.embed_links:
+                return ch
+
+        return preferred_channel
 
     # ==========================
     # VOICE STATE LISTENER (AUTO-LEAVE JIKA VOICE SEPI)
@@ -121,7 +196,7 @@ class MusicManager(commands.Cog):
         state = self.get_guild_state(guild.id)
         vc = guild.voice_client
 
-        if not vc or not state.current:
+        if not vc or not vc.is_connected() or not state.current:
             return
 
         if seek_to is None:
@@ -130,62 +205,77 @@ class MusicManager(commands.Cog):
         else:
             seek_seconds = max(0, seek_to)
 
-        state.is_restarting = True
-        if vc.is_playing() or vc.is_paused():
-            vc.stop()
-            await asyncio.sleep(0.1)
-
-        state.current.start_time = time.time() - seek_seconds
-
-        try:
-            webpage_or_url = state.current.url or state.current.data.get('url')
-            stream_data = await YTDLSource.get_streamable_data(webpage_or_url, loop=self.bot.loop)
-            audio_url = stream_data.get('url') if stream_data else None
-
-            if not audio_url:
-                await text_channel.send(f"❌ Gagal memuat ulang stream audio untuk **{state.current.title}**.")
-                state.is_restarting = False
-                self.play_next(guild, text_channel)
-                return
-
-            before_opts, filter_opts = build_ffmpeg_options(
-                seek_seconds=seek_seconds,
-                bass_boost=state.bass_boost,
-                nightcore=state.nightcore,
-                speed=state.speed,
-                equalizer=state.equalizer,
-                vaporwave=state.vaporwave,
-                treble=state.treble,
-                karaoke=state.karaoke
-            )
-
-            raw_source = discord.FFmpegPCMAudio(
-                audio_url,
-                executable=FFMPEG_EXECUTABLE,
-                before_options=before_opts,
-                options=filter_opts
-            )
-            source = discord.PCMVolumeTransformer(raw_source, volume=state.volume)
-
-            def after_playback(error):
-                if state.is_restarting:
-                    return
-                if error:
-                    print(f"[Player Error] {error}")
-                self.play_next(guild, text_channel)
-
-            state.is_restarting = False
-            if vc.is_playing():
+        async with state.play_lock:
+            state.is_restarting = True
+            if vc.is_playing() or vc.is_paused():
                 vc.stop()
-                await asyncio.sleep(0.05)
-            vc.play(source, after=after_playback)
+                for _ in range(20):
+                    if not vc.is_playing() and not vc.is_paused():
+                        break
+                    await asyncio.sleep(0.05)
 
-            await self.update_nowplaying_card(guild, text_channel)
+            state.current.start_time = time.time() - seek_seconds
 
-        except Exception as e:
-            state.is_restarting = False
-            print(f"[Apply Filter Error] {e}")
-            await text_channel.send(f"❌ Terjadi kesalahan saat menerapkan filter: `{e}`")
+            try:
+                webpage_or_url = state.current.url or state.current.data.get('url')
+                stream_data = await YTDLSource.get_streamable_data(webpage_or_url, loop=self.bot.loop)
+                audio_url = stream_data.get('url') if stream_data else None
+
+                if not audio_url:
+                    safe_channel = self.get_safe_text_channel(guild, text_channel)
+                    if safe_channel:
+                        await safe_channel.send(f"❌ Gagal memuat ulang stream audio untuk **{state.current.title}**.")
+                    state.is_restarting = False
+                    self.play_next(guild, text_channel)
+                    return
+
+                before_opts, filter_opts = build_ffmpeg_options(
+                    seek_seconds=seek_seconds,
+                    bass_boost=state.bass_boost,
+                    nightcore=state.nightcore,
+                    speed=state.speed,
+                    equalizer=state.equalizer,
+                    vaporwave=state.vaporwave,
+                    treble=state.treble,
+                    karaoke=state.karaoke
+                )
+
+                raw_source = discord.FFmpegPCMAudio(
+                    audio_url,
+                    executable=FFMPEG_EXECUTABLE,
+                    before_options=before_opts,
+                    options=filter_opts
+                )
+                source = discord.PCMVolumeTransformer(raw_source, volume=state.volume)
+
+                def after_playback(error):
+                    if state.is_restarting:
+                        return
+                    if error:
+                        print(f"[Player Error] {error}")
+                    self.play_next(guild, text_channel)
+
+                state.is_restarting = False
+                if vc.is_playing() or vc.is_paused():
+                    vc.stop()
+                    for _ in range(20):
+                        if not vc.is_playing() and not vc.is_paused():
+                            break
+                        await asyncio.sleep(0.05)
+
+                if vc.is_connected():
+                    state.current.start_time = time.time() - seek_seconds
+                    state.current.pause_start = None
+                    state.current.total_paused_duration = 0.0
+                    vc.play(source, after=after_playback)
+                    await self.update_nowplaying_card(guild, text_channel)
+
+            except Exception as e:
+                state.is_restarting = False
+                print(f"[Apply Filter Error] {e}")
+                safe_channel = self.get_safe_text_channel(guild, text_channel)
+                if safe_channel:
+                    await safe_channel.send(f"❌ Terjadi kesalahan saat menerapkan filter: `{e}`")
 
     # ==========================
     # AUTOPLAY ENGINE
@@ -622,65 +712,102 @@ class MusicManager(commands.Cog):
             self.bot.loop.create_task(background_prefetch())
 
         async def _start_playing():
-            try:
-                webpage_or_url = next_song.url or next_song.data.get('url')
-                stream_data = await YTDLSource.get_streamable_data(webpage_or_url, loop=self.bot.loop)
-                audio_url = stream_data.get('url') if stream_data else None
-
-                if not audio_url:
-                    await text_channel.send(f"⚠️ Lagu **{next_song.title}** tidak dapat diputar (video dibatasi/dihapus). Melanjutkan ke lagu berikutnya...")
-                    self.play_next(guild, text_channel)
-                    return
-
-                before_opts, filter_opts = build_ffmpeg_options(
-                    seek_seconds=0,
-                    bass_boost=state.bass_boost,
-                    nightcore=state.nightcore,
-                    speed=state.speed,
-                    equalizer=state.equalizer,
-                    vaporwave=state.vaporwave,
-                    treble=state.treble,
-                    karaoke=state.karaoke
-                )
-
-                raw_source = discord.FFmpegPCMAudio(
-                    audio_url,
-                    executable=FFMPEG_EXECUTABLE,
-                    before_options=before_opts,
-                    options=filter_opts
-                )
-                source = discord.PCMVolumeTransformer(raw_source, volume=state.volume)
-
-                def after_playback(error):
-                    if state.is_restarting:
+            async with state.play_lock:
+                try:
+                    vc = guild.voice_client
+                    if not vc or not vc.is_connected():
                         return
-                    if error:
-                        print(f"[Player Error] {error}")
-                    self.play_next(guild, text_channel)
 
-                if voice_client.is_playing():
-                    voice_client.stop()
-                    await asyncio.sleep(0.05)
-                voice_client.play(source, after=after_playback)
+                    webpage_or_url = next_song.url or next_song.data.get('url')
+                    stream_data = await YTDLSource.get_streamable_data(webpage_or_url, loop=self.bot.loop)
+                    audio_url = stream_data.get('url') if stream_data else None
 
-                if state.last_nowplaying_msg:
-                    try:
-                        await state.last_nowplaying_msg.delete()
-                    except Exception:
-                        pass
-                    state.last_nowplaying_msg = None
+                    if not audio_url:
+                        safe_channel = self.get_safe_text_channel(guild, text_channel)
+                        if safe_channel:
+                            await safe_channel.send(f"⚠️ Lagu **{next_song.title}** tidak dapat diputar (video dibatasi/dihapus). Melanjutkan ke lagu berikutnya...")
+                        self.play_next(guild, text_channel)
+                        return
 
-                embed = self.create_nowplaying_embed(state, next_song)
-                view = MusicControlView(self.bot, guild.id)
-                msg = await text_channel.send(embed=embed, view=view)
-                state.last_nowplaying_msg = msg
+                    vc = guild.voice_client
+                    if not vc or not vc.is_connected():
+                        return
 
-            except Exception as e:
-                print(f"[Playback Exception] {e}")
-                import traceback
-                traceback.print_exc()
-                await text_channel.send(f"❌ Terjadi kesalahan saat memutar lagu: `{e}`")
-                self.play_next(guild, text_channel)
+                    before_opts, filter_opts = build_ffmpeg_options(
+                        seek_seconds=0,
+                        bass_boost=state.bass_boost,
+                        nightcore=state.nightcore,
+                        speed=state.speed,
+                        equalizer=state.equalizer,
+                        vaporwave=state.vaporwave,
+                        treble=state.treble,
+                        karaoke=state.karaoke
+                    )
+
+                    raw_source = discord.FFmpegPCMAudio(
+                        audio_url,
+                        executable=FFMPEG_EXECUTABLE,
+                        before_options=before_opts,
+                        options=filter_opts
+                    )
+                    source = discord.PCMVolumeTransformer(raw_source, volume=state.volume)
+
+                    def after_playback(error):
+                        if state.is_restarting:
+                            return
+                        if error:
+                            print(f"[Player Error] {error}")
+                        self.play_next(guild, text_channel)
+
+                    if vc.is_playing() or vc.is_paused():
+                        vc.stop()
+                        for _ in range(20):
+                            if not vc.is_playing() and not vc.is_paused():
+                                break
+                            await asyncio.sleep(0.05)
+
+                    if not vc.is_connected():
+                        return
+
+                    next_song.start_time = time.time()
+                    next_song.pause_start = None
+                    next_song.total_paused_duration = 0.0
+                    vc.play(source, after=after_playback)
+
+                    if state.last_nowplaying_msg:
+                        try:
+                            await state.last_nowplaying_msg.delete()
+                        except Exception:
+                            pass
+                        state.last_nowplaying_msg = None
+
+                    # Simpan riwayat pemutaran ke database (Supabase / SQLite)
+                    user_id_str = str(next_song.requester.id) if next_song.requester else None
+                    await db.add_history(str(guild.id), next_song.data, user_id=user_id_str)
+
+                    safe_channel = self.get_safe_text_channel(guild, text_channel)
+                    if safe_channel:
+                        try:
+                            embed = self.create_nowplaying_embed(state, next_song)
+                            view = MusicControlView(self.bot, guild.id)
+                            msg = await safe_channel.send(embed=embed, view=view)
+                            state.last_nowplaying_msg = msg
+                        except discord.Forbidden:
+                            print(f"[Warning] Missing permission to send embed in {safe_channel.name}")
+                        except Exception as ex:
+                            print(f"[Embed Send Error] {ex}")
+
+                except Exception as e:
+                    print(f"[Playback Exception] {e}")
+                    safe_channel = self.get_safe_text_channel(guild, text_channel)
+                    if safe_channel and not isinstance(e, discord.errors.ClientException):
+                        try:
+                            await safe_channel.send(f"❌ Terjadi kesalahan saat memutar lagu: `{e}`")
+                        except Exception:
+                            pass
+                    vc = guild.voice_client
+                    if vc and vc.is_connected() and not isinstance(e, discord.errors.ClientException):
+                        self.play_next(guild, text_channel)
 
         self.bot.loop.create_task(_start_playing())
 
@@ -781,6 +908,7 @@ class MusicManager(commands.Cog):
             return discord.Embed(description="❌ Harap tentukan lagu yang ingin dicari liriknya.", color=discord.Color.red())
 
         lyrics_text = None
+        synced_lyrics = None
         matched_title = None
 
         headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
@@ -796,28 +924,225 @@ class MusicManager(commands.Cog):
                             results = await resp.json()
                             if results and isinstance(results, list):
                                 for item in results:
-                                    text = item.get("plainLyrics") or item.get("syncedLyrics")
-                                    if text:
-                                        lyrics_text = text
+                                    synced = item.get("syncedLyrics")
+                                    plain = item.get("plainLyrics")
+                                    if synced or plain:
+                                        lyrics_text = plain or synced
+                                        synced_lyrics = synced
                                         matched_title = f"{item.get('artistName', '')} - {item.get('trackName', '')}"
                                         break
                 except Exception:
                     pass
 
-                if lyrics_text:
+                if lyrics_text or synced_lyrics:
                     break
 
-        if not lyrics_text:
+        if not lyrics_text and not synced_lyrics:
             return discord.Embed(description=f"❌ Lirik tidak ditemukan untuk: `{search_candidates[0]}`", color=discord.Color.red())
 
-        if len(lyrics_text) > 4000:
-            lyrics_text = lyrics_text[:4000] + "\n\n*(Lirik terpotong karena terlalu panjang)*"
+        display_text = lyrics_text or synced_lyrics
+        if len(display_text) > 4000:
+            display_text = display_text[:4000] + "\n\n*(Lirik terpotong karena terlalu panjang)*"
 
         return discord.Embed(
             title=f"🎤 Lirik Lagu: {matched_title if matched_title and matched_title.strip(' -') else search_candidates[0]}",
-            description=lyrics_text,
+            description=display_text,
             color=discord.Color.magenta()
         )
+
+    async def fetch_lyrics_data(self, song: Song | None = None, query: str | None = None) -> dict:
+        import re
+        import urllib.parse
+        search_candidates = []
+        track_artist_pairs = []
+
+        def clean_str(s: str) -> str:
+            res = re.sub(r'[\(\[\{][^\)\]\}]*[\)\]\}]', '', s)
+            res = re.sub(r'(?i)\b(official|music\s+video|video|audio|lyrics?|lyric\s+video|visualizer|mv|4k|hd|remastered|clip\s+officiel|full\s+album)\b', '', res)
+            return re.sub(r'\s+', ' ', res).strip(' -•|')
+
+        def get_primary_artist(art: str) -> str:
+            p = re.split(r'(?i)\b(ft\.?|feat\.?|featuring|x|\&)\b', art)[0]
+            return clean_str(p)
+
+        if query:
+            q_clean = query.strip()
+            search_candidates.append(q_clean)
+            c_query = clean_str(q_clean)
+            if c_query and c_query != q_clean:
+                search_candidates.append(c_query)
+            if " - " in c_query:
+                parts = c_query.split(" - ", 1)
+                p0, p1 = clean_str(parts[0]), clean_str(parts[1])
+                track_artist_pairs.append((p0, p1))
+                track_artist_pairs.append((p1, p0))
+                p0_prim, p1_prim = get_primary_artist(p0), get_primary_artist(p1)
+                if p0_prim != p0:
+                    track_artist_pairs.append((p0_prim, p1))
+                if p1_prim != p1:
+                    track_artist_pairs.append((p1_prim, p0))
+        elif song:
+            raw_title = song.title
+            uploader = song.uploader or ""
+            clean_title = clean_str(raw_title)
+            clean_artist = re.sub(r'[\U00010000-\U0010ffff]|[\u2600-\u27ff]|autoplay|•', '', uploader, flags=re.IGNORECASE)
+            clean_artist = re.sub(r'(?i)\b(- topic|vevo|official|channel|records|music)\b', '', clean_artist).strip(' -• ')
+            clean_artist = clean_str(clean_artist)
+
+            if " - " in clean_title:
+                parts = clean_title.split(" - ", 1)
+                p0, p1 = clean_str(parts[0]), clean_str(parts[1])
+                track_artist_pairs.append((p0, p1))
+                track_artist_pairs.append((p1, p0))
+                p0_prim, p1_prim = get_primary_artist(p0), get_primary_artist(p1)
+                if p0_prim != p0:
+                    track_artist_pairs.append((p0_prim, p1))
+                if p1_prim != p1:
+                    track_artist_pairs.append((p1_prim, p0))
+
+                search_candidates.append(f"{p0} {p1}")
+                search_candidates.append(p1)
+                search_candidates.append(p0)
+
+            if clean_artist and clean_title:
+                track_artist_pairs.append((clean_artist, clean_title))
+                clean_artist_prim = get_primary_artist(clean_artist)
+                if clean_artist_prim != clean_artist:
+                    track_artist_pairs.append((clean_artist_prim, clean_title))
+                search_candidates.append(f"{clean_artist} {clean_title}")
+
+            if clean_title:
+                search_candidates.append(clean_title)
+            search_candidates.append(raw_title)
+
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+        best_plain = None
+
+        async with aiohttp.ClientSession(headers=headers) as session:
+            # Step 1: Direct exact match on lrclib.net /api/get
+            for artist, track in track_artist_pairs:
+                if not artist or not track:
+                    continue
+                try:
+                    params = urllib.parse.urlencode({"artist_name": artist, "track_name": track})
+                    async with session.get(f"https://lrclib.net/api/get?{params}", timeout=aiohttp.ClientTimeout(total=3)) as resp:
+                        if resp.status == 200:
+                            item = await resp.json()
+                            synced = item.get("syncedLyrics")
+                            plain = item.get("plainLyrics")
+                            if synced and synced.strip():
+                                return {
+                                    "title": f"{item.get('artistName', artist)} - {item.get('trackName', track)}",
+                                    "plain_lyrics": plain or synced,
+                                    "synced_lyrics": synced,
+                                    "is_synced": True
+                                }
+                            if plain and not best_plain:
+                                best_plain = {
+                                    "title": f"{item.get('artistName', artist)} - {item.get('trackName', track)}",
+                                    "plain_lyrics": plain,
+                                    "synced_lyrics": None,
+                                    "is_synced": False
+                                }
+                except Exception:
+                    pass
+
+            # Step 2: Target search with track_name & artist_name params on lrclib
+            for artist, track in track_artist_pairs[:4]:
+                if not artist or not track:
+                    continue
+                try:
+                    params = urllib.parse.urlencode({"artist_name": artist, "track_name": track})
+                    async with session.get(f"https://lrclib.net/api/search?{params}", timeout=aiohttp.ClientTimeout(total=3)) as resp:
+                        if resp.status == 200:
+                            results = await resp.json()
+                            if results and isinstance(results, list):
+                                for item in results:
+                                    synced = item.get("syncedLyrics")
+                                    if synced and synced.strip():
+                                        return {
+                                            "title": f"{item.get('artistName', artist)} - {item.get('trackName', track)}",
+                                            "plain_lyrics": item.get("plainLyrics") or synced,
+                                            "synced_lyrics": synced,
+                                            "is_synced": True
+                                        }
+                                if not best_plain:
+                                    for item in results:
+                                        plain = item.get("plainLyrics")
+                                        if plain and plain.strip():
+                                            best_plain = {
+                                                "title": f"{item.get('artistName', artist)} - {item.get('trackName', track)}",
+                                                "plain_lyrics": plain,
+                                                "synced_lyrics": None,
+                                                "is_synced": False
+                                            }
+                                            break
+                except Exception:
+                    pass
+
+            # Step 3: Search lrclib.net /api/search?q=...
+            for cand in search_candidates:
+                if not cand:
+                    continue
+                encoded = urllib.parse.quote(cand)
+                try:
+                    async with session.get(f"https://lrclib.net/api/search?q={encoded}", timeout=aiohttp.ClientTimeout(total=3)) as resp:
+                        if resp.status == 200:
+                            results = await resp.json()
+                            if results and isinstance(results, list):
+                                for item in results:
+                                    synced = item.get("syncedLyrics")
+                                    if synced and synced.strip():
+                                        return {
+                                            "title": f"{item.get('artistName', '')} - {item.get('trackName', '')}",
+                                            "plain_lyrics": item.get("plainLyrics") or synced,
+                                            "synced_lyrics": synced,
+                                            "is_synced": True
+                                        }
+                                if not best_plain:
+                                    for item in results:
+                                        plain = item.get("plainLyrics")
+                                        if plain and plain.strip():
+                                            best_plain = {
+                                                "title": f"{item.get('artistName', '')} - {item.get('trackName', '')}",
+                                                "plain_lyrics": plain,
+                                                "synced_lyrics": None,
+                                                "is_synced": False
+                                            }
+                                            break
+                except Exception:
+                    pass
+
+            if best_plain:
+                return best_plain
+
+            # Step 4: Fallback to lyrics.ovh
+            for artist, track in track_artist_pairs[:4]:
+                if not artist or not track:
+                    continue
+                try:
+                    enc_artist = urllib.parse.quote(artist)
+                    enc_track = urllib.parse.quote(track)
+                    async with session.get(f"https://api.lyrics.ovh/v1/{enc_artist}/{enc_track}", timeout=aiohttp.ClientTimeout(total=3)) as resp:
+                        if resp.status == 200:
+                            data = await resp.json()
+                            lyrics = data.get("lyrics")
+                            if lyrics and lyrics.strip():
+                                return {
+                                    "title": f"{artist} - {track}",
+                                    "plain_lyrics": lyrics,
+                                    "synced_lyrics": None,
+                                    "is_synced": False
+                                }
+                except Exception:
+                    pass
+
+        return {
+            "title": search_candidates[0] if search_candidates else "",
+            "plain_lyrics": None,
+            "synced_lyrics": None,
+            "is_synced": False
+        }
 
     async def fetch_lyrics(self, query: str) -> tuple[str, str, str | None]:
         embed = await self.fetch_lyrics_embed(query=query)

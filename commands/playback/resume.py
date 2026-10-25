@@ -15,8 +15,11 @@ class ResumeCommand(commands.Cog):
         if not vc or not vc.is_paused():
             return await interaction.response.send_message("❌ Musik tidak sedang dalam kondisi jeda.", ephemeral=True)
         vc.resume()
-        await interaction.response.send_message("▶️ Musik dilanjutkan.")
         manager = self.get_manager()
+        state = manager.get_guild_state(interaction.guild_id)
+        if state and state.current:
+            state.current.resume()
+        await interaction.response.send_message("▶️ Musik dilanjutkan.")
         await manager.update_nowplaying_card(interaction.guild, interaction.channel)
 
 async def setup(bot: commands.Bot):

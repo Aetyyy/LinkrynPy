@@ -73,10 +73,40 @@ class MusicControlView(discord.ui.View):
     @discord.ui.button(label="Skip", emoji="⏭️", style=discord.ButtonStyle.secondary, row=0)
     async def skip(self, interaction: discord.Interaction, button: discord.ui.Button):
         voice_client = interaction.guild.voice_client
-        if not voice_client or not voice_client.is_playing():
-            return await interaction.response.send_message("Tidak ada lagu untuk di-skip.", ephemeral=True)
-        voice_client.stop()
-        await interaction.response.send_message("⏭️ Melewati lagu...", ephemeral=True)
+        if not voice_client or not (voice_client.is_playing() or voice_client.is_paused()):
+            return await interaction.response.send_message("❌ Tidak ada lagu untuk di-skip.", ephemeral=True)
+
+        if not interaction.user.voice or interaction.user.voice.channel != voice_client.channel:
+            return await interaction.response.send_message("❌ Kamu harus berada di voice channel yang sama dengan bot untuk melakukan skip.", ephemeral=True)
+
+        cog = self.get_cog()
+        state = cog.get_guild_state(interaction.guild_id)
+        can_skip, reason = state.has_skip_permission(interaction.user, voice_client)
+        if can_skip:
+            voice_client.stop()
+            return await interaction.response.send_message(f"⏭️ **{interaction.user.display_name}** melewati lagu (`{reason}`).")
+
+        listeners = [m for m in voice_client.channel.members if not m.bot]
+        required_votes = max(1, (len(listeners) + 1) // 2)
+
+        owner_name = "Pengguna Utama"
+        if state.session_owner_id:
+            m = interaction.guild.get_member(state.session_owner_id)
+            if m:
+                owner_name = m.display_name
+        elif state.current and state.current.requester:
+            owner_name = getattr(state.current.requester, "display_name", "Pemutar Lagu")
+
+        embed = discord.Embed(
+            title="🔔 Permintaan Melewati Lagu",
+            description=(
+                f"**{interaction.user.display_name}** ingin melewati lagu **{state.current.title if state.current else 'saat ini'}**.\n\n"
+                f"📌 *Diperlukan persetujuan dari pemutar lagu utama (**{owner_name}**), Admin/DJ, atau voting minimal **{required_votes} suara**.*"
+            ),
+            color=discord.Color.gold()
+        )
+        view = SkipApprovalView(self.bot, interaction.guild_id, interaction.user, required_votes)
+        await interaction.response.send_message(embed=embed, view=view)
 
     # BARIS 2: Volume & Utilitas Pemutaran
     @discord.ui.button(emoji="🔉", style=discord.ButtonStyle.secondary, row=1)
@@ -311,3 +341,63 @@ class QueuePageView(discord.ui.View):
             self.page += 1
         embed = self.get_embed()
         await interaction.response.edit_message(embed=embed, view=self)
+
+class SkipApprovalView(discord.ui.View):
+    def __init__(self, bot: commands.Bot, guild_id: int, requester: discord.Member, required_votes: int):
+        super().__init__(timeout=60)
+        self.bot = bot
+        self.guild_id = guild_id
+        self.requester = requester
+        self.required_votes = required_votes
+        self.votes: set[int] = set()
+
+    def get_cog(self):
+        return self.bot.get_cog("MusicManager") or self.bot.get_cog("Music")
+
+    @discord.ui.button(label="Setujui Skip (Pemilik / Admin)", emoji="✅", style=discord.ButtonStyle.success)
+    async def approve(self, interaction: discord.Interaction, button: discord.ui.Button):
+        guild = interaction.guild
+        vc = guild.voice_client
+        if not vc or not (vc.is_playing() or vc.is_paused()):
+            return await interaction.response.send_message("❌ Lagu sudah tidak aktif diputar.", ephemeral=True)
+
+        cog = self.get_cog()
+        state = cog.get_guild_state(guild.id)
+        can_approve, reason = state.has_skip_permission(interaction.user, vc)
+        if not can_approve:
+            return await interaction.response.send_message("❌ Hanya pemilik lagu utama, pemutar sesi, atau Admin/DJ yang dapat langsung menyetujui skip.", ephemeral=True)
+
+        vc.stop()
+        self.stop()
+        await interaction.response.edit_message(
+            content=f"✅ Permintaan skip disetujui oleh **{interaction.user.display_name}** ({reason})! Melewati lagu...",
+            embed=None,
+            view=None
+        )
+
+    @discord.ui.button(label="Vote Skip (0)", emoji="🗳️", style=discord.ButtonStyle.primary)
+    async def vote(self, interaction: discord.Interaction, button: discord.ui.Button):
+        guild = interaction.guild
+        vc = guild.voice_client
+        if not vc or not (vc.is_playing() or vc.is_paused()):
+            return await interaction.response.send_message("❌ Lagu sudah tidak aktif diputar.", ephemeral=True)
+
+        if not interaction.user.voice or interaction.user.voice.channel != vc.channel:
+            return await interaction.response.send_message("❌ Kamu harus berada di voice channel yang sama untuk memberikan vote.", ephemeral=True)
+
+        if interaction.user.id in self.votes:
+            return await interaction.response.send_message("⚠️ Kamu sudah memberikan vote sebelumnya.", ephemeral=True)
+
+        self.votes.add(interaction.user.id)
+        button.label = f"Vote Skip ({len(self.votes)}/{self.required_votes})"
+
+        if len(self.votes) >= self.required_votes:
+            vc.stop()
+            self.stop()
+            await interaction.response.edit_message(
+                content=f"🗳️ Voting skip tercapai (**{len(self.votes)}/{self.required_votes}** suara)! Melewati lagu...",
+                embed=None,
+                view=None
+            )
+        else:
+            await interaction.response.edit_message(view=self)

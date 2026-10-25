@@ -1,5 +1,6 @@
 import time
 import random
+import asyncio
 from collections import deque
 import discord
 
@@ -23,7 +24,18 @@ class Song:
         self.uploader = data.get('uploader') or data.get('channel') or data.get('artist') or 'Unknown Artist'
         self.requester = requester
         self.start_time: float | None = None
+        self.pause_start: float | None = None
+        self.total_paused_duration: float = 0.0
         self.is_autoplay: bool = False
+
+    def pause(self):
+        if not self.pause_start:
+            self.pause_start = time.time()
+
+    def resume(self):
+        if self.pause_start:
+            self.total_paused_duration += time.time() - self.pause_start
+            self.pause_start = None
 
     def format_duration(self, seconds: int | float | None = None) -> str:
         sec_val = self.duration if seconds is None else seconds
@@ -36,10 +48,11 @@ class Song:
         return f"{mins:02d}:{secs:02d}"
 
     def get_progress(self) -> tuple[int, str]:
-        """Menghitung waktu berjalan dan progress bar audio."""
+        """Menghitung waktu berjalan dan progress bar audio dengan akurasi pause."""
         if not self.start_time or not self.duration:
             return 0, "🔘" + "▬" * 15
-        elapsed = int(time.time() - self.start_time)
+        now = self.pause_start if self.pause_start else time.time()
+        elapsed = max(0, int(now - self.start_time - self.total_paused_duration))
         elapsed = min(elapsed, int(self.duration))
         progress = elapsed / self.duration
         total_bars = 16
@@ -75,6 +88,45 @@ class MusicQueue:
         self.is_restarting: bool = False  # Flag mencegah after_playback memajukan antrean saat restart stream
         self.auto_leave_task = None
         self.votes: set[int] = set()
+        self.play_lock = asyncio.Lock()   # Kunci serialisasi playback untuk mencegah Already playing audio
+        self.session_owner_id: int | None = None  # ID pengguna utama yang memulai sesi bot di voice channel
+        self.trusted_skip_users: set[int] = set() # Daftar user ID yang diberikan izin khusus skip langsung
+
+    def has_skip_permission(self, member: discord.Member, voice_client: discord.VoiceClient | None = None) -> tuple[bool, str]:
+        """
+        Mengecek apakah member memiliki hak untuk melakukan skip langsung.
+        Mengembalikan tuple (boleh_skip: bool, alasan: str).
+        """
+        if not member:
+            return False, "User tidak valid"
+
+        # 1. Administrator atau Manage Guild
+        if member.guild_permissions.administrator or member.guild_permissions.manage_guild:
+            return True, "Admin / Pengelola Server"
+
+        # 2. Memiliki Role DJ
+        if any(r.name.lower() == "dj" for r in member.roles):
+            return True, "Peran DJ"
+
+        # 3. Pemutar lagu yang sedang aktif saat ini
+        if self.current and self.current.requester and getattr(self.current.requester, "id", None) == member.id:
+            return True, "Pemutar Lagu Saat Ini"
+
+        # 4. Pengguna utama yang memulai sesi bot
+        if self.session_owner_id and self.session_owner_id == member.id:
+            return True, "Pengguna Utama Sesi"
+
+        # 5. Diberikan izin khusus oleh pengguna utama
+        if member.id in self.trusted_skip_users:
+            return True, "Izin Khusus DJ dari Pengguna Utama"
+
+        # 6. Hanya ada 1 pendengar manusia di Voice Channel
+        if voice_client and voice_client.channel:
+            human_listeners = [m for m in voice_client.channel.members if not m.bot]
+            if len(human_listeners) <= 1:
+                return True, "Satu-satunya Pendengar di Voice Channel"
+
+        return False, "Memerlukan persetujuan pemutar utama atau voting"
 
     @property
     def filters(self):
