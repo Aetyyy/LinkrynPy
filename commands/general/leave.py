@@ -18,6 +18,8 @@ class LeaveCommand(commands.Cog):
         manager = self.get_manager()
         state = manager.get_guild_state(interaction.guild_id)
         state.clear()
+        if hasattr(manager, "set_voice_channel_status") and voice_client.channel:
+            await manager.set_voice_channel_status(voice_client.channel, "")
 
         await voice_client.disconnect()
         await interaction.response.send_message("👋 Terputus dari voice channel dan antrean telah dibersihkan.", ephemeral=False)

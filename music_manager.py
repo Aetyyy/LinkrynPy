@@ -28,6 +28,12 @@ class MusicManager(commands.Cog):
     async def join_or_move(self, target_channel: discord.VoiceChannel | discord.StageChannel, user_id: int | None = None) -> discord.VoiceClient:
         guild = target_channel.guild
         state = self.get_guild_state(guild.id)
+
+        # Batalkan task auto-leave kosong yang sedang menunggu jika ada
+        if hasattr(state, '_empty_leave_task') and state._empty_leave_task and not state._empty_leave_task.done():
+            state._empty_leave_task.cancel()
+            state._empty_leave_task = None
+
         voice_client = guild.voice_client
 
         if voice_client is not None:
@@ -43,24 +49,80 @@ class MusicManager(commands.Cog):
                     if (voice_client.is_playing() or voice_client.is_paused() or len(state.queue) > 0) and len(human_listeners) > 0:
                         raise VoiceChannelProtectedError(voice_client.channel.name)
 
-                # Channel sebelumnya sepi atau tidak ada musik, pindah ke channel target
-                await voice_client.move_to(target_channel)
-                if user_id:
-                    state.session_owner_id = user_id
-                return voice_client
+                # Channel sebelumnya sepi atau tidak ada musik, pindah ke channel target tanpa reconnect
+                try:
+                    await voice_client.move_to(target_channel)
+                    if user_id:
+                        state.session_owner_id = user_id
+                    return voice_client
+                except Exception:
+                    pass
             else:
-                # Ghost / stale voice client: disconnect paksa terlebih dahulu
+                # Ghost / stale voice client: disconnect paksa dan bersihkan cache internal discord.py
                 try:
                     await voice_client.disconnect(force=True)
                 except Exception:
                     pass
+                try:
+                    guild._state._remove_voice_client(guild.id)
+                except Exception:
+                    pass
+                await asyncio.sleep(0.5)
 
-        try:
-            voice_client = await target_channel.connect(reconnect=True, timeout=20.0)
-        except discord.ClientException:
-            voice_client = guild.voice_client
-            if voice_client and voice_client.channel and voice_client.channel.id != target_channel.id:
-                await voice_client.move_to(target_channel)
+        # Validasi izin bot di Voice Channel target sebelum mencoba koneksi
+        me = guild.me or (guild.get_member(self.bot.user.id) if self.bot.user else None)
+        if me and hasattr(target_channel, "permissions_for"):
+            perms = target_channel.permissions_for(me)
+            if not perms.view_channel:
+                raise PermissionError(f"Bot tidak memiliki izin 'View Channel' di voice channel #{target_channel.name} pada server '{guild.name}'.")
+            if not perms.connect:
+                raise PermissionError(f"Bot tidak memiliki izin 'Connect' di voice channel #{target_channel.name} pada server '{guild.name}'. Mohon periksa role bot atau channel permission.")
+            if not isinstance(target_channel, discord.StageChannel) and not perms.speak:
+                raise PermissionError(f"Bot tidak memiliki izin 'Speak' di voice channel #{target_channel.name} pada server '{guild.name}'.")
+            if target_channel.user_limit and target_channel.user_limit > 0 and len(target_channel.members) >= target_channel.user_limit and not perms.move_members:
+                raise PermissionError(f"Voice channel #{target_channel.name} sudah penuh ({len(target_channel.members)}/{target_channel.user_limit}) dan bot tidak memiliki izin 'Move Members' untuk melewatinya.")
+
+        # Lakukan koneksi ke voice channel (self_deaf=True untuk reliabilitas dan performa audio)
+        last_error = None
+        for attempt in range(2):
+            try:
+                voice_client = await target_channel.connect(reconnect=True, timeout=15.0, self_deaf=True)
+                break
+            except discord.Forbidden as e:
+                raise PermissionError(f"Akses ditolak oleh Discord (Missing Permissions: {e}). Pastikan bot memiliki izin Connect & Speak di server '{guild.name}'.")
+            except discord.ClientException:
+                voice_client = guild.voice_client
+                if voice_client and voice_client.channel and voice_client.channel.id != target_channel.id:
+                    await voice_client.move_to(target_channel)
+                break
+            except (asyncio.TimeoutError, TimeoutError) as e:
+                last_error = e
+                # Jika percobaan pertama timeout karena Discord Gateway busy, bersihkan dan beri jeda lalu coba lagi
+                vc = guild.voice_client
+                if vc:
+                    try:
+                        await vc.disconnect(force=True)
+                    except Exception:
+                        pass
+                    try:
+                        guild._state._remove_voice_client(guild.id)
+                    except Exception:
+                        pass
+                await asyncio.sleep(1.0)
+                continue
+
+        if not voice_client and last_error:
+            raise last_error
+
+        # Jika target adalah Stage Channel, coba unsuppress (request to speak) agar audio dapat terdengar
+        if voice_client and isinstance(target_channel, discord.StageChannel):
+            try:
+                await guild.change_voice_state(channel=target_channel, suppress=False)
+            except Exception:
+                try:
+                    await guild.change_voice_state(channel=target_channel, request_to_speak=True)
+                except Exception:
+                    pass
 
         if user_id:
             state.session_owner_id = user_id
@@ -72,6 +134,19 @@ class MusicManager(commands.Cog):
             return None
 
         return await self.join_or_move(user.voice.channel, user.id)
+
+    async def set_voice_channel_status(self, channel: discord.VoiceChannel | discord.StageChannel | None, status_text: str | None = None):
+        """Mengatur status Voice Channel di Discord untuk menampilkan lagu yang sedang diputar."""
+        if not channel or not hasattr(channel, "id"):
+            return
+        try:
+            from discord.http import Route
+            route = Route('PUT', '/channels/{channel_id}/voice-status', channel_id=channel.id)
+            cleaned = (status_text[:497] + "...") if status_text and len(status_text) > 500 else (status_text or "")
+            await self.bot.http.request(route, json={'status': cleaned})
+        except Exception:
+            # Tidak mengganggu bot jika channel atau server tidak mengizinkan voice status update
+            pass
 
     def get_safe_text_channel(self, guild: discord.Guild, preferred_channel: discord.abc.Messageable | None = None) -> discord.abc.Messageable | None:
         vc = guild.voice_client
@@ -116,26 +191,60 @@ class MusicManager(commands.Cog):
     # ==========================
     @commands.Cog.listener()
     async def on_voice_state_update(self, member: discord.Member, before: discord.VoiceState, after: discord.VoiceState):
+        # Mencegah loop/duplicate: abaikan event voice state dari bot itu sendiri
+        if member.id == self.bot.user.id:
+            return
+
+        # Sinkronkan status dashboard secara instan ke browser jika ada user yang masuk, keluar, atau pindah Voice Channel
+        dashboard = getattr(self.bot, "web_dashboard", None)
+        if dashboard:
+            self.bot.loop.create_task(dashboard.broadcast_status())
+
         guild = member.guild
         vc = guild.voice_client
         if not vc or not vc.channel:
             return
 
-        if before.channel == vc.channel:
+        # Hanya bertindak jika member keluar atau berpindah dari channel bot
+        if before.channel == vc.channel and after.channel != vc.channel:
             non_bot_members = [m for m in vc.channel.members if not m.bot]
             if len(non_bot_members) == 0:
                 state = self.get_guild_state(guild.id)
-                if state.last_nowplaying_msg:
-                    try:
-                        await state.last_nowplaying_msg.delete()
-                    except Exception:
-                        pass
-                    state.last_nowplaying_msg = None
-                state.clear()
-                state.current = None
-                vc.stop()
-                await vc.disconnect()
-                print(f"[Auto-Leave] Bot keluar dari {guild.name} karena voice channel kosong.")
+                if hasattr(state, '_empty_leave_task') and state._empty_leave_task and not state._empty_leave_task.done():
+                    state._empty_leave_task.cancel()
+
+                async def _delayed_empty_leave(channel_id: int):
+                    # Berikan jeda toleransi 20 detik agar jika user hanya berpindah channel atau reconnect
+                    # koneksi gateway Discord tidak terputus mendadak atau bentrok
+                    await asyncio.sleep(20)
+                    cur_vc = guild.voice_client
+                    if cur_vc and cur_vc.is_connected() and cur_vc.channel and cur_vc.channel.id == channel_id:
+                        cur_non_bots = [m for m in cur_vc.channel.members if not m.bot]
+                        if len(cur_non_bots) == 0:
+                            if state.last_nowplaying_msg:
+                                try:
+                                    await state.last_nowplaying_msg.delete()
+                                except Exception:
+                                    pass
+                                state.last_nowplaying_msg = None
+                            state.clear()
+                            state.current = None
+                            if cur_vc.channel:
+                                await self.set_voice_channel_status(cur_vc.channel, "")
+                            cur_vc.stop()
+                            try:
+                                await cur_vc.disconnect(force=True)
+                            except Exception:
+                                pass
+                            print(f"[Auto-Leave] Bot keluar dari {guild.name} karena voice channel kosong.")
+
+                state._empty_leave_task = self.bot.loop.create_task(_delayed_empty_leave(vc.channel.id))
+
+        elif after.channel == vc.channel and not member.bot:
+            state = self.get_guild_state(guild.id)
+            if hasattr(state, '_empty_leave_task') and state._empty_leave_task and not state._empty_leave_task.done():
+                state._empty_leave_task.cancel()
+                state._empty_leave_task = None
 
     # ==========================
     # MESSAGE LISTENER (HANYA PESAN USER YANG MEMINDAHKAN EMBED)
@@ -235,6 +344,7 @@ class MusicManager(commands.Cog):
                     nightcore=state.nightcore,
                     speed=state.speed,
                     equalizer=state.equalizer,
+                    custom_eq=getattr(state, "custom_eq", None),
                     vaporwave=state.vaporwave,
                     treble=state.treble,
                     karaoke=state.karaoke
@@ -739,6 +849,7 @@ class MusicManager(commands.Cog):
                         nightcore=state.nightcore,
                         speed=state.speed,
                         equalizer=state.equalizer,
+                        custom_eq=getattr(state, "custom_eq", None),
                         vaporwave=state.vaporwave,
                         treble=state.treble,
                         karaoke=state.karaoke
@@ -773,6 +884,13 @@ class MusicManager(commands.Cog):
                     next_song.pause_start = None
                     next_song.total_paused_duration = 0.0
                     vc.play(source, after=after_playback)
+
+                    # Perbarui status Voice Channel di Discord untuk menampilkan lagu yang sedang diputar
+                    if vc.channel:
+                        vc_status = f"🎶 {next_song.title}"
+                        if next_song.uploader:
+                            vc_status = f"🎶 {next_song.title} • {next_song.uploader}"
+                        await self.set_voice_channel_status(vc.channel, vc_status)
 
                     if state.last_nowplaying_msg:
                         try:
@@ -823,6 +941,8 @@ class MusicManager(commands.Cog):
             await text_channel.send(embed=embed)
             await asyncio.sleep(180)
             if voice_client and voice_client.is_connected() and not voice_client.is_playing() and not state.queue:
+                if voice_client.channel:
+                    await self.set_voice_channel_status(voice_client.channel, "")
                 if state.last_nowplaying_msg:
                     try:
                         await state.last_nowplaying_msg.delete()
@@ -985,7 +1105,7 @@ class MusicManager(commands.Cog):
             raw_title = song.title
             uploader = song.uploader or ""
             clean_title = clean_str(raw_title)
-            clean_artist = re.sub(r'[\U00010000-\U0010ffff]|[\u2600-\u27ff]|autoplay|•', '', uploader, flags=re.IGNORECASE)
+            clean_artist = re.sub(r'[\U00010000-\U0010ffff]|[\u2600-\u27ff]|•', '', uploader, flags=re.IGNORECASE)
             clean_artist = re.sub(r'(?i)\b(- topic|vevo|official|channel|records|music)\b', '', clean_artist).strip(' -• ')
             clean_artist = clean_str(clean_artist)
 
@@ -1015,8 +1135,19 @@ class MusicManager(commands.Cog):
                 search_candidates.append(clean_title)
             search_candidates.append(raw_title)
 
-        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
-        best_plain = None
+        headers = {'User-Agent': 'LinkrynMusicBot/2.0 (Mozilla/5.0)'}
+        target_duration = float(song.duration) if song and song.duration else 0.0
+        intro_chapter_delay = 0.0
+        if song and song.data:
+            chapters = song.data.get('chapters') or []
+            for ch in chapters:
+                ch_title = (ch.get('title') or '').lower()
+                if any(w in ch_title for w in ['intro', 'opening', 'scene', 'skit', 'dialog', 'prologue', 'awal', 'cutscene']):
+                    intro_chapter_delay = float(ch.get('end_time') or 0.0)
+                    break
+
+        all_lrc_items = []
+        seen_ids = set()
 
         async with aiohttp.ClientSession(headers=headers) as session:
             # Step 1: Direct exact match on lrclib.net /api/get
@@ -1028,22 +1159,10 @@ class MusicManager(commands.Cog):
                     async with session.get(f"https://lrclib.net/api/get?{params}", timeout=aiohttp.ClientTimeout(total=3)) as resp:
                         if resp.status == 200:
                             item = await resp.json()
-                            synced = item.get("syncedLyrics")
-                            plain = item.get("plainLyrics")
-                            if synced and synced.strip():
-                                return {
-                                    "title": f"{item.get('artistName', artist)} - {item.get('trackName', track)}",
-                                    "plain_lyrics": plain or synced,
-                                    "synced_lyrics": synced,
-                                    "is_synced": True
-                                }
-                            if plain and not best_plain:
-                                best_plain = {
-                                    "title": f"{item.get('artistName', artist)} - {item.get('trackName', track)}",
-                                    "plain_lyrics": plain,
-                                    "synced_lyrics": None,
-                                    "is_synced": False
-                                }
+                            iid = item.get("id") or f"{artist}_{track}"
+                            if iid not in seen_ids:
+                                seen_ids.add(iid)
+                                all_lrc_items.append(item)
                 except Exception:
                     pass
 
@@ -1058,30 +1177,15 @@ class MusicManager(commands.Cog):
                             results = await resp.json()
                             if results and isinstance(results, list):
                                 for item in results:
-                                    synced = item.get("syncedLyrics")
-                                    if synced and synced.strip():
-                                        return {
-                                            "title": f"{item.get('artistName', artist)} - {item.get('trackName', track)}",
-                                            "plain_lyrics": item.get("plainLyrics") or synced,
-                                            "synced_lyrics": synced,
-                                            "is_synced": True
-                                        }
-                                if not best_plain:
-                                    for item in results:
-                                        plain = item.get("plainLyrics")
-                                        if plain and plain.strip():
-                                            best_plain = {
-                                                "title": f"{item.get('artistName', artist)} - {item.get('trackName', track)}",
-                                                "plain_lyrics": plain,
-                                                "synced_lyrics": None,
-                                                "is_synced": False
-                                            }
-                                            break
+                                    iid = item.get("id") or f"{item.get('trackName')}_{item.get('duration')}"
+                                    if iid not in seen_ids:
+                                        seen_ids.add(iid)
+                                        all_lrc_items.append(item)
                 except Exception:
                     pass
 
             # Step 3: Search lrclib.net /api/search?q=...
-            for cand in search_candidates:
+            for cand in search_candidates[:4]:
                 if not cand:
                     continue
                 encoded = urllib.parse.quote(cand)
@@ -1091,30 +1195,71 @@ class MusicManager(commands.Cog):
                             results = await resp.json()
                             if results and isinstance(results, list):
                                 for item in results:
-                                    synced = item.get("syncedLyrics")
-                                    if synced and synced.strip():
-                                        return {
-                                            "title": f"{item.get('artistName', '')} - {item.get('trackName', '')}",
-                                            "plain_lyrics": item.get("plainLyrics") or synced,
-                                            "synced_lyrics": synced,
-                                            "is_synced": True
-                                        }
-                                if not best_plain:
-                                    for item in results:
-                                        plain = item.get("plainLyrics")
-                                        if plain and plain.strip():
-                                            best_plain = {
-                                                "title": f"{item.get('artistName', '')} - {item.get('trackName', '')}",
-                                                "plain_lyrics": plain,
-                                                "synced_lyrics": None,
-                                                "is_synced": False
-                                            }
-                                            break
+                                    iid = item.get("id") or f"{item.get('trackName')}_{item.get('duration')}"
+                                    if iid not in seen_ids:
+                                        seen_ids.add(iid)
+                                        all_lrc_items.append(item)
                 except Exception:
                     pass
 
-            if best_plain:
-                return best_plain
+            # Jika ada hasil dari LRCLIB, pilih yang paling sesuai dengan durasi video/lagu!
+            if all_lrc_items:
+                def score_item(it):
+                    synced = bool(it.get("syncedLyrics") and it.get("syncedLyrics").strip())
+                    dur = float(it.get("duration") or 0.0)
+                    dur_diff = abs(dur - target_duration) if (target_duration > 0 and dur > 0) else 999.0
+                    # Prioritaskan item yang memiliki syncedLyrics dan selisih durasi paling kecil ke video
+                    return (0 if synced else 1, dur_diff)
+
+                all_lrc_items.sort(key=score_item)
+                best_item = all_lrc_items[0]
+
+                synced = best_item.get("syncedLyrics")
+                plain = best_item.get("plainLyrics")
+                lrc_dur = float(best_item.get("duration") or 0.0)
+
+                # Deteksi jeda cutscene / intro:
+                suggested_offset = 0.0
+                if intro_chapter_delay > 0:
+                    suggested_offset = round(intro_chapter_delay, 1)
+                elif target_duration > 0 and lrc_dur > 0 and (target_duration - lrc_dur) >= 3.0:
+                    # Video lebih panjang dari track studio asli (misal MV ber-intro cutscene)
+                    suggested_offset = round(target_duration - lrc_dur, 1)
+
+                if synced and synced.strip():
+                    return {
+                        "title": f"{best_item.get('artistName', '')} - {best_item.get('trackName', '')}",
+                        "plain_lyrics": plain or synced,
+                        "synced_lyrics": synced,
+                        "is_synced": True,
+                        "lrc_duration": lrc_dur,
+                        "video_duration": target_duration,
+                        "suggested_offset": suggested_offset
+                    }
+
+                if plain and plain.strip():
+                    # Jika hanya plain, buat lrc dengan memperhitungkan offset intro cutscene
+                    lines = [l.strip() for l in plain.split("\n") if l.strip()]
+                    if lines and target_duration > 0:
+                        start_time = suggested_offset if suggested_offset > 0 else 0.0
+                        effective_dur = max(20.0, target_duration - start_time)
+                        step = max(2.0, (effective_dur * 0.95) / len(lines))
+                        lrc_lines = []
+                        for i, l in enumerate(lines):
+                            t = start_time + (i * step)
+                            mins = int(t // 60)
+                            secs = int(t % 60)
+                            ms = int((t - int(t)) * 100)
+                            lrc_lines.append(f"[{mins:02d}:{secs:02d}.{ms:02d}] {l}")
+                        return {
+                            "title": f"{best_item.get('artistName', '')} - {best_item.get('trackName', '')}",
+                            "plain_lyrics": plain,
+                            "synced_lyrics": "\n".join(lrc_lines),
+                            "is_synced": True,
+                            "lrc_duration": lrc_dur,
+                            "video_duration": target_duration,
+                            "suggested_offset": suggested_offset
+                        }
 
             # Step 4: Fallback to lyrics.ovh
             for artist, track in track_artist_pairs[:4]:
@@ -1128,11 +1273,28 @@ class MusicManager(commands.Cog):
                             data = await resp.json()
                             lyrics = data.get("lyrics")
                             if lyrics and lyrics.strip():
+                                start_time = intro_chapter_delay if intro_chapter_delay > 0 else 0.0
+                                lines = [l.strip() for l in lyrics.split("\n") if l.strip()]
+                                lrc_str = None
+                                if lines and target_duration > 0:
+                                    effective_dur = max(20.0, target_duration - start_time)
+                                    step = max(2.0, (effective_dur * 0.95) / len(lines))
+                                    lrc_lines = []
+                                    for i, l in enumerate(lines):
+                                        t = start_time + (i * step)
+                                        mins = int(t // 60)
+                                        secs = int(t % 60)
+                                        ms = int((t - int(t)) * 100)
+                                        lrc_lines.append(f"[{mins:02d}:{secs:02d}.{ms:02d}] {l}")
+                                    lrc_str = "\n".join(lrc_lines)
                                 return {
                                     "title": f"{artist} - {track}",
                                     "plain_lyrics": lyrics,
-                                    "synced_lyrics": None,
-                                    "is_synced": False
+                                    "synced_lyrics": lrc_str,
+                                    "is_synced": bool(lrc_str),
+                                    "lrc_duration": None,
+                                    "video_duration": target_duration,
+                                    "suggested_offset": start_time
                                 }
                 except Exception:
                     pass

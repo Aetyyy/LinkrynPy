@@ -1,27 +1,54 @@
 :root {
-  --bg-base: #121212;
-  --bg-surface: #181818;
-  --bg-elevated: #242424;
-  --bg-highlight: #2a2a2a;
-  --text-main: #ffffff;
-  --text-sub: #b3b3b3;
-  --spotify-green: #1db954;
-  --spotify-green-hover: #1ed760;
-  --accent-purple: #8c52ff;
-  --border-color: #282828;
+  /* Midnight Navy & Cobalt Blue Design Tokens */
+  --bg-main: #0B1220;
+  --bg-sidebar: #0A101C;
+  --bg-surface: #111B2D;
+  --bg-surface-elevated: #152238;
+  --bg-surface-secondary: #17243A;
+  --bg-surface-hover: #1E2D47;
+
+  /* Cobalt Blue Accents */
+  --primary-blue: #3978F6;
+  --hover-blue: #528CFF;
+  --soft-blue: #8BB4FF;
+  --active-blue-bg: rgba(57, 120, 246, 0.12);
+  --active-blue-border: rgba(57, 120, 246, 0.35);
+
+  /* Typography */
+  --text-primary: #F1F5F9;
+  --text-secondary: #94A3B8;
+  --text-muted: #64748B;
+
+  /* Borders & Dividers */
+  --border-subtle: rgba(148, 163, 184, 0.12);
+  --border-focus: rgba(57, 120, 246, 0.5);
+
+  /* Semantic Status */
+  --status-success: #10B981;
+  --status-warning: #F59E0B;
+  --status-danger: #EF4444;
+  --status-info: #3978F6;
+
+  /* Elevation Shadows */
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 10px 30px rgba(0, 0, 0, 0.5);
+  --shadow-blue-glow: 0 0 20px rgba(57, 120, 246, 0.25);
 }
 
 * {
   box-sizing: border-box;
   margin: 0;
   padding: 0;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   user-select: none;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 body {
-  background-color: var(--bg-base);
-  color: var(--text-main);
+  background-color: var(--bg-main);
+  color: var(--text-primary);
   overflow: hidden;
   height: 100vh;
   width: 100vw;
@@ -29,63 +56,93 @@ body {
 
 #root {
   height: 100vh;
+  width: 100vw;
   display: flex;
   flex-direction: column;
+  background-color: var(--bg-main);
 }
 
-/* Custom Scrollbar */
+/* Custom Scrollbars */
 ::-webkit-scrollbar {
-  width: 8px;
+  width: 6px;
+  height: 6px;
 }
 ::-webkit-scrollbar-track {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: #3e3e3e;
-  border-radius: 4px;
+  background: rgba(148, 163, 184, 0.2);
+  border-radius: 9999px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #555555;
+  background: rgba(148, 163, 184, 0.35);
 }
 
-/* Utilities */
-button {
-  background: none;
-  border: none;
-  color: inherit;
-  cursor: pointer;
-  outline: none;
-  transition: all 0.2s ease;
-}
-
-button:hover {
-  transform: scale(1.04);
-}
-
-button:active {
-  transform: scale(0.96);
-}
-
+/* Native slider resets */
 input[type="range"] {
-  -webkit-appearance: none;
-  height: 4px;
-  border-radius: 2px;
-  background: #4d4d4d;
-  outline: none;
-  cursor: pointer;
+  accent-color: var(--primary-blue);
 }
 
-input[type="range"]::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  background: var(--text-main);
-  cursor: pointer;
-  transition: background 0.2s;
+/* Focus Visible */
+button:focus-visible,
+input:focus-visible,
+a:focus-visible {
+  outline: 2px solid var(--primary-blue);
+  outline-offset: 2px;
 }
 
-input[type="range"]:hover::-webkit-slider-thumb {
-  background: var(--spotify-green);
-  transform: scale(1.2);
+/* Animations */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slideInRight {
+  from {
+    opacity: 0;
+    transform: translateX(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes pulseGlow {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-slide-right {
+  animation: slideInRight 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-pulse {
+  animation: pulseGlow 2s infinite ease-in-out;
+}
+
+/* Reduced motion preference */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

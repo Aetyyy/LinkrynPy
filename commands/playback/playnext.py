@@ -16,22 +16,22 @@ class PlayNextCommand(commands.Cog):
     @app_commands.command(name="playnext", description="Sisipkan lagu langsung ke urutan pertama antrean berikutnya")
     @app_commands.describe(query="Judul lagu, link YouTube, atau link Spotify")
     async def playnext(self, interaction: discord.Interaction, query: str):
+        await interaction.response.defer()
         manager = self.get_manager()
         try:
             voice_client = await manager.ensure_voice(interaction)
         except Exception as e:
             from music_manager import VoiceChannelProtectedError
             if isinstance(e, VoiceChannelProtectedError):
-                return await interaction.response.send_message(
+                return await interaction.followup.send(
                     f"❌ Bot sedang aktif memutar musik di channel **#{e.channel_name}**. Kamu harus bergabung ke channel tersebut!",
                     ephemeral=True
                 )
-            raise e
+            return await interaction.followup.send(f"❌ Terjadi kesalahan saat menghubungkan: {str(e)}", ephemeral=True)
 
         if not voice_client:
-            return await interaction.response.send_message("❌ Kamu harus berada di voice channel terlebih dahulu!", ephemeral=True)
+            return await interaction.followup.send("❌ Kamu harus berada di voice channel terlebih dahulu!", ephemeral=True)
 
-        await interaction.response.defer()
         state = manager.get_guild_state(interaction.guild_id)
 
         if SpotifyHelper.is_spotify_url(query):

@@ -16,7 +16,9 @@ class EqualizerCommand(commands.Cog):
         app_commands.Choice(name="Pop", value="pop"),
         app_commands.Choice(name="Rock", value="rock"),
         app_commands.Choice(name="Electronic", value="electronic"),
-        app_commands.Choice(name="Classical", value="classical")
+        app_commands.Choice(name="Classical", value="classical"),
+        app_commands.Choice(name="Jazz", value="jazz"),
+        app_commands.Choice(name="Vocal Boost", value="vocal")
     ])
     async def equalizer(self, interaction: discord.Interaction, preset: app_commands.Choice[str]):
         manager = self.get_manager()

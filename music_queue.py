@@ -47,18 +47,18 @@ class Song:
             return f"{hrs:02d}:{mins:02d}:{secs:02d}"
         return f"{mins:02d}:{secs:02d}"
 
-    def get_progress(self) -> tuple[int, str]:
-        """Menghitung waktu berjalan dan progress bar audio dengan akurasi pause."""
+    def get_progress(self) -> tuple[float, str]:
+        """Menghitung waktu berjalan dan progress bar audio dengan presisi float dan akurasi pause."""
         if not self.start_time or not self.duration:
-            return 0, "🔘" + "▬" * 15
+            return 0.0, "🔘" + "▬" * 15
         now = self.pause_start if self.pause_start else time.time()
-        elapsed = max(0, int(now - self.start_time - self.total_paused_duration))
-        elapsed = min(elapsed, int(self.duration))
-        progress = elapsed / self.duration
+        elapsed = max(0.0, now - self.start_time - self.total_paused_duration)
+        elapsed = min(elapsed, float(self.duration))
+        progress = elapsed / self.duration if self.duration > 0 else 0.0
         total_bars = 16
         filled = min(int(progress * total_bars), total_bars)
         bar = "▬" * filled + "🔘" + "▬" * (total_bars - filled)
-        return elapsed, bar
+        return round(elapsed, 2), bar
 
 class MusicQueue:
     def __init__(self):
@@ -69,10 +69,11 @@ class MusicQueue:
         self.volume: float = 0.5
         
         # Audio Filters
-        self.bass_boost: str = "off"  # "off", "low", "medium", "high"
+        self.bass_boost: str = "off"  # "off", "low"/"soft", "medium", "high"/"hard", "extreme"
         self.speed: float = 1.0
         self.nightcore: bool = False
-        self.equalizer: str = "off"   # "off", "flat", "pop", "rock", "classical", "electronic", "vocal"
+        self.equalizer: str = "off"   # "off", "pop", "rock", "classical", "jazz", "electronic", "vocal", "custom"
+        self.custom_eq: list[int] = [0, 0, 0, 0, 0]  # [60Hz, 230Hz, 910Hz, 3600Hz, 14000Hz] in dB
         self.vaporwave: bool = False
         self.treble: int = 0          # -10 sampai 10 dB
         self.karaoke: bool = False

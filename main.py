@@ -9,6 +9,22 @@ from dotenv import load_dotenv
 # Muat environment variable dari .env
 load_dotenv()
 
+# Redam error internal WinError 10054 pada asyncio Proactor Windows saat koneksi WebSocket browser ditutup
+if sys.platform == "win32":
+    try:
+        from asyncio.proactor_events import _ProactorBasePipeTransport
+        _orig_call_connection_lost = _ProactorBasePipeTransport._call_connection_lost
+
+        def _silenced_call_connection_lost(self, exc):
+            try:
+                _orig_call_connection_lost(self, exc)
+            except (ConnectionResetError, OSError):
+                pass
+
+        _ProactorBasePipeTransport._call_connection_lost = _silenced_call_connection_lost
+    except Exception:
+        pass
+
 TOKEN = os.getenv("DISCORD_TOKEN")
 PREFIX = os.getenv("COMMAND_PREFIX", "!")
 

@@ -148,25 +148,27 @@ class WebDashboard:
 
         return None, None
 
-    def get_selected_guild(self, request, user=None):
-        # 1. Jika ada user login, utamakan server tempat user sedang berada di Voice Channel
+    def get_selected_guild(self, request, user=None, body_guild_id=None):
+        # 1. Prioritas TERTINGGI: Server tempat user sedang aktif berada di Voice Channel saat ini!
         if user and user.get("id"):
             u_guild, u_channel = self.find_user_presence(user["id"])
             if u_channel and u_guild:
                 return u_guild
 
-        # 2. Cek query parameter guild_id
-        if request:
-            guild_id_str = request.query.get("guild_id")
-            if guild_id_str:
-                try:
-                    g = self.bot.get_guild(int(guild_id_str))
-                    if g:
-                        return g
-                except ValueError:
-                    pass
+        # 2. Guild spesifik yang diminta (jika user tidak sedang di voice channel)
+        target_gid = body_guild_id
+        if not target_gid and request:
+            target_gid = request.query.get("guild_id")
 
-        # 3. Jika user login, gunakan server tempat user terdaftar
+        if target_gid:
+            try:
+                g = self.bot.get_guild(int(target_gid))
+                if g:
+                    return g
+            except (ValueError, TypeError):
+                pass
+
+        # 3. Server tempat user terdaftar
         if user and user.get("id"):
             u_guild, _ = self.find_user_presence(user["id"])
             if u_guild:
@@ -189,8 +191,9 @@ class WebDashboard:
 
         try:
             user = await self.get_current_user(request)
-            ws.user = user
-            guild = self.get_selected_guild(request, user)
+            ws._user = user
+            ws._guild_id = request.query.get("guild_id")
+            guild = self.get_selected_guild(request, user, body_guild_id=ws._guild_id)
             data = await self._build_status_data(guild, user)
             await ws.send_str(json.dumps({"type": "STATUS_UPDATE", "data": data}))
 
@@ -200,6 +203,13 @@ class WebDashboard:
                         payload = json.loads(msg.data)
                         if payload.get("action") == "PING":
                             await ws.send_str(json.dumps({"type": "PONG"}))
+                        elif payload.get("action") == "SWITCH_GUILD":
+                            new_gid = payload.get("guild_id")
+                            if new_gid:
+                                ws._guild_id = str(new_gid)
+                                guild = self.get_selected_guild(None, getattr(ws, "_user", None), body_guild_id=ws._guild_id)
+                                data = await self._build_status_data(guild, getattr(ws, "_user", None))
+                                await ws.send_str(json.dumps({"type": "STATUS_UPDATE", "data": data}))
                     except Exception:
                         pass
         finally:
@@ -213,8 +223,9 @@ class WebDashboard:
         for ws in list(self.ws_clients):
             try:
                 if not ws.closed:
-                    ws_user = getattr(ws, "user", None)
-                    guild = self.get_selected_guild(None, ws_user)
+                    ws_user = getattr(ws, "_user", None)
+                    ws_gid = getattr(ws, "_guild_id", None)
+                    guild = self.get_selected_guild(None, ws_user, body_guild_id=ws_gid)
                     data = await self._build_status_data(guild, ws_user)
                     await ws.send_str(json.dumps({"type": "STATUS_UPDATE", "data": data}))
             except Exception:
@@ -299,6 +310,7 @@ class WebDashboard:
             "filters": {
                 "bass_boost": state.bass_boost if state else "off",
                 "equalizer": state.equalizer if state else "off",
+                "custom_eq": getattr(state, "custom_eq", [0, 0, 0, 0, 0]) if state else [0, 0, 0, 0, 0],
                 "nightcore": state.nightcore if state else False,
                 "vaporwave": state.vaporwave if state else False,
                 "speed": state.speed if state else 1.0,
@@ -571,14 +583,48 @@ class WebDashboard:
         if not query:
             return self.json_response({"error": "Query cannot be empty"}, 400)
 
-        # Cari voice channel tempat user aktif berada
-        u_guild, user_channel = self.find_user_presence(user["id"]) if user else (None, None)
-        if not user_channel or not u_guild:
+        if not user:
             return self.json_response({
-                "error": "Kamu belum berada di Voice Channel Discord mana pun. Bergabunglah ke Voice Channel di Discord terlebih dahulu!"
+                "error": "Kamu belum login dengan akun Discord di website. Silakan masuk terlebih dahulu dengan klik tombol 'Masuk Akun Discord' di pojok kiri bawah agar bot dapat mengenali kamu!"
+            }, 401)
+
+        # Cari voice channel: periksa guild yang diminta atau kehadiran aktif user
+        target_guild_id = body.get("guild_id") or request.query.get("guild_id")
+        guild = None
+        user_channel = None
+
+        if target_guild_id and str(target_guild_id).isdigit():
+            g = self.bot.get_guild(int(target_guild_id))
+            if g:
+                guild = g
+                if user.get("id") and str(user["id"]).isdigit():
+                    uid = int(user["id"])
+                    # Cari langsung di seluruh voice channel guild yang ditargetkan
+                    for vc in g.voice_channels:
+                        if any(m.id == uid for m in vc.members):
+                            user_channel = vc
+                            break
+                    if not user_channel:
+                        for sc in g.stage_channels:
+                            if any(m.id == uid for m in sc.members):
+                                user_channel = sc
+                                break
+
+                # Fallback: jika bot sudah berada di voice client channel
+                if not user_channel and g.voice_client and g.voice_client.channel:
+                    user_channel = g.voice_client.channel
+
+        if not user_channel:
+            u_guild, u_channel = self.find_user_presence(user["id"])
+            if u_guild and u_channel:
+                guild = u_guild
+                user_channel = u_channel
+
+        if not user_channel or not guild:
+            return self.json_response({
+                "error": "Kamu belum berada di Voice Channel Discord mana pun. Masuklah ke Voice Channel di server Discord terlebih dahulu!"
             }, 400)
 
-        guild = u_guild
         manager = self.get_manager()
         state = manager.get_guild_state(guild.id)
         user_uid = int(user["id"]) if (user and user.get("id") and str(user["id"]).isdigit()) else None
@@ -730,8 +776,11 @@ class WebDashboard:
             state = manager.get_guild_state(guild.id)
             state.clear()
             state.current = None
+            if hasattr(manager, "set_voice_channel_status") and guild.voice_client.channel:
+                await manager.set_voice_channel_status(guild.voice_client.channel, "")
             guild.voice_client.stop()
             await guild.voice_client.disconnect()
+            await self.broadcast_status()
             return self.json_response({"success": True})
         return self.json_response({"error": "Cannot stop"}, 400)
 
@@ -742,31 +791,45 @@ class WebDashboard:
             manager = self.get_manager()
             state = manager.get_guild_state(guild.id)
             state.shuffle()
+            await self.broadcast_status()
             return self.json_response({"success": True})
         return self.json_response({"error": "Guild not found"}, 404)
 
     async def post_loop(self, request):
-        body = await request.json()
-        mode = body.get("mode", "off")
+        try:
+            body = await request.json()
+        except Exception:
+            body = {}
         user = await self.get_current_user(request)
         guild = self.get_selected_guild(request, user)
         if guild:
             manager = self.get_manager()
             state = manager.get_guild_state(guild.id)
+            mode = body.get("mode") if isinstance(body, dict) else None
+            # Jika mode tidak dikirim atau tidak valid, lakukan auto-toggle berurutan: off -> track -> queue -> off
+            if not mode or mode not in ("off", "track", "queue"):
+                cycle = {"off": "track", "track": "queue", "queue": "off"}
+                mode = cycle.get(state.loop_mode, "track")
             state.loop_mode = mode
             await manager.update_nowplaying_card(guild)
+            await self.broadcast_status()
             return self.json_response({"success": True, "mode": mode})
         return self.json_response({"error": "Guild not found"}, 404)
 
     async def post_volume(self, request):
         body = await request.json()
-        level = int(body.get("level", 50))
+        raw = body.get("level") if body.get("level") is not None else body.get("volume", 100)
+        try:
+            level = int(raw)
+        except (ValueError, TypeError):
+            level = 100
+        level = max(1, min(level, 200))
         user = await self.get_current_user(request)
         guild = self.get_selected_guild(request, user)
         if guild:
             manager = self.get_manager()
             state = manager.get_guild_state(guild.id)
-            state.volume = max(0.01, min(level / 100.0, 2.0))
+            state.volume = level / 100.0
             vc = guild.voice_client
             if vc and vc.source:
                 if hasattr(vc.source, "volume"):
@@ -774,7 +837,8 @@ class WebDashboard:
                 elif hasattr(vc.source, "original") and hasattr(vc.source.original, "volume"):
                     vc.source.original.volume = state.volume
             await manager.update_nowplaying_card(guild)
-            return self.json_response({"success": True, "volume": int(state.volume * 100)})
+            await self.broadcast_status()
+            return self.json_response({"success": True, "volume": level})
         return self.json_response({"error": "Guild not found"}, 404)
 
     async def post_seek(self, request):
@@ -786,6 +850,7 @@ class WebDashboard:
             manager = self.get_manager()
             safe_text_channel = manager.get_safe_text_channel(guild)
             await manager.apply_filter_realtime(guild, safe_text_channel, seek_to=target_seconds)
+            await self.broadcast_status()
             return self.json_response({"success": True, "seconds": target_seconds})
         return self.json_response({"error": "Cannot seek"}, 400)
 
@@ -802,6 +867,10 @@ class WebDashboard:
                 state.bass_boost = value
             elif filter_name == "equalizer":
                 state.equalizer = value
+            elif filter_name == "custom_eq":
+                if isinstance(value, list) and len(value) == 5:
+                    state.custom_eq = [max(-12, min(12, int(v))) for v in value]
+                    state.equalizer = "custom"
             elif filter_name == "nightcore":
                 state.nightcore = not state.nightcore
                 if state.nightcore:
@@ -824,6 +893,7 @@ class WebDashboard:
                 state.vaporwave = False
                 state.speed = 1.0
                 state.equalizer = "off"
+                state.custom_eq = [0, 0, 0, 0, 0]
                 state.treble = 0
                 state.karaoke = False
 
@@ -832,6 +902,7 @@ class WebDashboard:
                 await manager.apply_filter_realtime(guild, safe_text_channel)
             else:
                 await manager.update_nowplaying_card(guild)
+            await self.broadcast_status()
             return self.json_response({"success": True})
         return self.json_response({"error": "Guild not found"}, 404)
 
@@ -862,7 +933,10 @@ class WebDashboard:
             "title": data.get("title") or (curr.title if curr else "Lirik Lagu"),
             "lyrics": data.get("plain_lyrics"),
             "synced_lyrics": data.get("synced_lyrics"),
-            "is_synced": bool(data.get("is_synced"))
+            "is_synced": bool(data.get("is_synced")),
+            "lrc_duration": data.get("lrc_duration"),
+            "video_duration": curr.duration if curr else None,
+            "suggested_offset": data.get("suggested_offset", 0.0)
         })
 
     async def post_dj_grant(self, request):
@@ -1016,7 +1090,10 @@ class WebDashboard:
                         existing_urls = {s["url"] for s in self.recs_cache.get(active_cat, [])}
                         for e in new_entries:
                             u = e.get("webpage_url") or e.get("url")
-                            dur = e.get("duration", 0)
+                            try:
+                                dur = int(e.get("duration") or 0)
+                            except (ValueError, TypeError):
+                                dur = 0
                             if u and u not in existing_urls and dur <= 720:
                                 self.recs_cache[active_cat].append({
                                     "title": e.get("title"),
@@ -1039,7 +1116,10 @@ class WebDashboard:
 
         results = []
         for e in entries:
-            dur = e.get("duration", 0)
+            try:
+                dur = int(e.get("duration") or 0)
+            except (ValueError, TypeError):
+                dur = 0
             if dur > 720:  # Skip kompilasi lebih dari 12 menit
                 continue
             u = e.get("webpage_url") or e.get("url")
@@ -1164,13 +1244,33 @@ class WebDashboard:
         if not user:
             return self.json_response({"error": "Login required"}, 401)
 
-        u_guild, user_channel = self.find_user_presence(user["id"])
-        if not user_channel or not u_guild:
+        target_guild_id = request.query.get("guild_id")
+        guild = None
+        user_channel = None
+
+        if target_guild_id and str(target_guild_id).isdigit():
+            g = self.bot.get_guild(int(target_guild_id))
+            if g:
+                if user and user.get("id") and str(user["id"]).isdigit():
+                    m = g.get_member(int(user["id"]))
+                    if m and m.voice and m.voice.channel:
+                        guild = g
+                        user_channel = m.voice.channel
+                if not user_channel and g.voice_client and g.voice_client.channel:
+                    guild = g
+                    user_channel = g.voice_client.channel
+
+        if not guild or not user_channel:
+            u_guild, u_channel = self.find_user_presence(user["id"])
+            if u_guild and u_channel:
+                guild = u_guild
+                user_channel = u_channel
+
+        if not user_channel or not guild:
             return self.json_response({
                 "error": "Kamu belum berada di Voice Channel Discord mana pun. Masuklah ke Voice Channel di server tujuan terlebih dahulu!"
             }, 400)
 
-        guild = u_guild
         playlist_id = int(request.match_info["id"])
         songs = await db.get_playlist_songs(playlist_id, user_id=user["id"])
         if not songs:

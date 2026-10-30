@@ -24,6 +24,8 @@ class StopCommand(commands.Cog):
             state.last_nowplaying_msg = None
         state.clear()
         state.current = None
+        if hasattr(manager, "set_voice_channel_status") and vc.channel:
+            await manager.set_voice_channel_status(vc.channel, "")
         vc.stop()
         await vc.disconnect()
         await interaction.response.send_message("⏹️ Musik dihentikan dan antrean dibersihkan.")

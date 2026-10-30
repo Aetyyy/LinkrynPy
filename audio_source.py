@@ -57,27 +57,33 @@ def build_ffmpeg_options(
     nightcore: bool = False,
     speed: float = 1.0,
     equalizer: str = "off",
+    custom_eq: list[int] | None = None,
     vaporwave: bool = False,
     treble: int = 0,
     karaoke: bool = False
 ) -> tuple[str, str]:
-    """Menyusun parameter FFmpeg sebelum dan filter audio (bass boost, nightcore, speed, equalizer, dll.)."""
+    """Menyusun parameter FFmpeg sebelum dan filter audio (bass boost, nightcore, speed, equalizer, custom EQ, dll.)."""
     before = "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5"
     if seek_seconds > 0:
         before += f" -ss {seek_seconds}"
 
     filters = []
 
-    # 1. Bass Boost
-    if bass_boost == "low":
-        filters.append("bass=g=5:f=110:w=0.6")
+    # 1. Bass Boost (Dukung penamaan low/soft, medium, high/hard, dan extreme)
+    if bass_boost in ("low", "soft"):
+        filters.append("bass=g=6:f=110:w=0.6")
     elif bass_boost == "medium":
-        filters.append("bass=g=10:f=110:w=0.6")
-    elif bass_boost == "high":
-        filters.append("bass=g=15:f=110:w=0.6")
+        filters.append("bass=g=11:f=110:w=0.6")
+    elif bass_boost in ("high", "hard"):
+        filters.append("bass=g=16:f=110:w=0.6")
+    elif bass_boost == "extreme":
+        filters.append("bass=g=22:f=110:w=0.6")
 
-    # 2. Equalizer Presets
-    if equalizer == "pop":
+    # 2. Equalizer Presets & Custom Multi-Band EQ
+    if equalizer == "custom" and custom_eq and len(custom_eq) == 5:
+        b0, b1, b2, b3, b4 = [max(-12, min(12, int(v))) for v in custom_eq]
+        filters.append(f"equalizer=f=60:t=q:w=1:g={b0},equalizer=f=230:t=q:w=1:g={b1},equalizer=f=910:t=q:w=1:g={b2},equalizer=f=3600:t=q:w=1:g={b3},equalizer=f=14000:t=q:w=1:g={b4}")
+    elif equalizer == "pop":
         filters.append("equalizer=f=64:t=q:w=1:g=2,equalizer=f=250:t=q:w=1:g=3,equalizer=f=1000:t=q:w=1:g=4,equalizer=f=4000:t=q:w=1:g=3,equalizer=f=12000:t=q:w=1:g=2")
     elif equalizer == "rock":
         filters.append("equalizer=f=64:t=q:w=1:g=5,equalizer=f=250:t=q:w=1:g=3,equalizer=f=1000:t=q:w=1:g=-2,equalizer=f=4000:t=q:w=1:g=4,equalizer=f=12000:t=q:w=1:g=5")
@@ -85,6 +91,8 @@ def build_ffmpeg_options(
         filters.append("equalizer=f=64:t=q:w=1:g=6,equalizer=f=250:t=q:w=1:g=4,equalizer=f=1000:t=q:w=1:g=0,equalizer=f=4000:t=q:w=1:g=3,equalizer=f=12000:t=q:w=1:g=5")
     elif equalizer == "classical":
         filters.append("equalizer=f=64:t=q:w=1:g=4,equalizer=f=250:t=q:w=1:g=2,equalizer=f=1000:t=q:w=1:g=-1,equalizer=f=4000:t=q:w=1:g=3,equalizer=f=12000:t=q:w=1:g=4")
+    elif equalizer == "jazz":
+        filters.append("equalizer=f=64:t=q:w=1:g=3,equalizer=f=250:t=q:w=1:g=2,equalizer=f=1000:t=q:w=1:g=1,equalizer=f=4000:t=q:w=1:g=2,equalizer=f=12000:t=q:w=1:g=4")
     elif equalizer == "vocal":
         filters.append("equalizer=f=64:t=q:w=1:g=-3,equalizer=f=250:t=q:w=1:g=-1,equalizer=f=1000:t=q:w=1:g=5,equalizer=f=4000:t=q:w=1:g=4,equalizer=f=12000:t=q:w=1:g=1")
 
