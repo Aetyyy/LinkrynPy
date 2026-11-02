@@ -27,7 +27,7 @@ class ReplayCommand(commands.Cog):
         voice_client = interaction.guild.voice_client
         if voice_client and (voice_client.is_playing() or voice_client.is_paused()):
             voice_client.stop()
-        else:
+        elif not getattr(state, "is_loading", False):
             manager.play_next(interaction.guild, interaction.channel)
 
         await interaction.response.send_message(f"🔁 Memutar ulang lagu sebelumnya: **{song_clone.title}**")

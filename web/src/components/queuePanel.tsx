@@ -20,25 +20,53 @@ export const QueuePanel: React.FC<QueuePanelProps> = ({
   onPlaySong,
 }) => {
   return (
-    <div className="w-[320px] bg-[#0E1726] border-l border-slate-700/30 flex flex-col h-full z-20 animate-slide-right">
+    <div
+      style={{
+        width: '320px',
+        backgroundColor: 'var(--bg-sidebar)',
+        borderLeft: '1px solid var(--border-subtle)',
+        display: 'flex',
+        flexDirection: 'column',
+        height: '100%',
+        zIndex: 20,
+      }}
+      className="animate-slide-right"
+    >
       {/* Header */}
-      <div className="p-4 px-5 border-b border-slate-700/30 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <ListMusic size={18} className="text-blue-500" />
-          <h2 className="text-[15px] font-bold text-slate-100">
+      <div
+        style={{
+          padding: '18px 20px',
+          borderBottom: '1px solid var(--border-subtle)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <ListMusic size={18} color="var(--primary-blue)" />
+          <h2 style={{ fontSize: '15px', fontWeight: '700', color: 'var(--text-primary)' }}>
             Antrean Putar
           </h2>
-          <span className="text-xs text-slate-400 font-medium">
+          <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
             ({queue.length})
           </span>
         </div>
 
-        <div className="flex items-center gap-1.5">
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
           {queue.length > 0 && (
             <button
               onClick={onClearQueue}
               title="Bersihkan seluruh antrean"
-              className="text-red-400 hover:text-red-300 text-[11.5px] font-semibold cursor-pointer px-2 py-1 rounded hover:bg-red-500/10 transition-colors"
+              style={{
+                background: 'none',
+                border: 'none',
+                color: 'var(--status-danger)',
+                fontSize: '11.5px',
+                fontWeight: '600',
+                cursor: 'pointer',
+                padding: '4px 8px',
+                borderRadius: '4px',
+              }}
             >
               Bersihkan
             </button>
@@ -46,32 +74,51 @@ export const QueuePanel: React.FC<QueuePanelProps> = ({
 
           <button
             onClick={onClose}
-            className="text-slate-400 hover:text-slate-200 p-1 rounded-md hover:bg-slate-800 transition-colors"
-            title="Tutup Antrean"
+            style={{
+              background: 'none',
+              border: 'none',
+              color: 'var(--text-muted)',
+              cursor: 'pointer',
+              padding: '4px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
           >
             <X size={18} />
           </button>
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4 px-5 flex flex-col gap-4 scrollbar-thin scrollbar-thumb-slate-700">
+      <div style={{ flex: 1, overflowY: 'auto', padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+        
         {/* Currently Playing Card */}
         {currentSong && (
           <div>
-            <p className="text-[11px] uppercase text-slate-400 font-bold tracking-wider mb-2">
+            <p style={{ fontSize: '11px', textTransform: 'uppercase', color: 'var(--text-muted)', fontWeight: '700', letterSpacing: '0.5px', marginBottom: '8px' }}>
               Sedang Diputar
             </p>
-            <div className="flex items-center gap-2.5 p-2.5 rounded-lg bg-blue-500/10 border border-blue-500/30">
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '10px',
+                padding: '10px',
+                borderRadius: '8px',
+                backgroundColor: 'var(--active-blue-bg)',
+                border: '1px solid var(--active-blue-border)',
+              }}
+            >
               <img
                 src={currentSong.thumbnail || 'https://via.placeholder.com/40'}
                 alt=""
-                className="w-10 h-10 rounded-md object-cover shrink-0"
+                style={{ width: '40px', height: '40px', borderRadius: '6px', objectFit: 'cover' }}
               />
-              <div className="min-w-0 flex-1">
-                <p className="text-[13px] font-semibold text-blue-300 truncate" title={currentSong.title}>
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <p style={{ fontSize: '13px', fontWeight: '600', color: 'var(--soft-blue)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', margin: 0 }}>
                   {currentSong.title}
                 </p>
-                <p className="text-[11px] text-slate-400 truncate mt-0.5" title={currentSong.uploader || currentSong.artist}>
+                <p style={{ fontSize: '11px', color: 'var(--text-secondary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: '2px' }}>
                   {currentSong.uploader || currentSong.artist}
                 </p>
               </div>
@@ -80,46 +127,65 @@ export const QueuePanel: React.FC<QueuePanelProps> = ({
         )}
 
         {/* Up Next List */}
-        <div className="flex-1">
-          <p className="text-[11px] uppercase text-slate-400 font-bold tracking-wider mb-2">
+        <div style={{ flex: 1 }}>
+          <p style={{ fontSize: '11px', textTransform: 'uppercase', color: 'var(--text-muted)', fontWeight: '700', letterSpacing: '0.5px', marginBottom: '8px' }}>
             Berikutnya ({queue.length})
           </p>
 
           {queue.length === 0 ? (
-            <div className="py-8 text-center text-slate-400">
-              <p className="text-[13px]">Antrean kosong.</p>
-              <p className="text-[11.5px] mt-1 text-slate-500">Cari lagu atau putar dari rekomendasi.</p>
+            <div style={{ padding: '32px 0', textAlign: 'center', color: 'var(--text-muted)' }}>
+              <p style={{ fontSize: '13px' }}>Antrean kosong.</p>
+              <p style={{ fontSize: '11.5px', marginTop: '4px' }}>Cari lagu atau putar dari rekomendasi.</p>
             </div>
           ) : (
-            <div className="flex flex-col gap-1.5">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
               {queue.map((item, idx) => (
                 <div
                   key={idx}
-                  className="flex items-center gap-2.5 p-2 px-2.5 rounded-lg bg-[#131E30] hover:bg-[#1A263B] border border-slate-700/30 transition-colors"
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '10px',
+                    padding: '8px 10px',
+                    borderRadius: '8px',
+                    backgroundColor: 'var(--bg-surface)',
+                    border: '1px solid var(--border-subtle)',
+                    transition: 'background-color 0.15s ease',
+                  }}
+                  onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'var(--bg-surface-elevated)')}
+                  onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'var(--bg-surface)')}
                 >
-                  <span className="text-[11px] text-slate-400 min-w-[16px] font-medium">
+                  <span style={{ fontSize: '11px', color: 'var(--text-muted)', minWidth: '16px' }}>
                     {idx + 1}
                   </span>
                   <img
                     src={item.thumbnail || 'https://via.placeholder.com/36'}
                     alt=""
-                    className="w-9 h-9 rounded-md object-cover shrink-0"
+                    style={{ width: '36px', height: '36px', borderRadius: '4px', objectFit: 'cover' }}
                   />
                   <div
                     onClick={() => onPlaySong(item)}
-                    className="min-w-0 flex-1 cursor-pointer"
+                    style={{ minWidth: 0, flex: 1, cursor: 'pointer' }}
                   >
-                    <p className="text-[12.5px] font-semibold text-slate-100 truncate" title={item.title}>
+                    <p style={{ fontSize: '12.5px', fontWeight: '600', color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', margin: 0 }}>
                       {item.title}
                     </p>
-                    <p className="text-[11px] text-slate-400 truncate" title={item.uploader || item.artist}>
+                    <p style={{ fontSize: '11px', color: 'var(--text-secondary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                       {item.uploader || item.artist}
                     </p>
                   </div>
                   <button
                     onClick={() => onRemoveItem(idx + 1)}
                     title="Hapus dari antrean"
-                    className="text-slate-400 hover:text-red-400 p-1 rounded hover:bg-red-500/10 transition-colors"
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      color: 'var(--text-muted)',
+                      cursor: 'pointer',
+                      padding: '4px',
+                    }}
+                    onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--status-danger)')}
+                    onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text-muted)')}
                   >
                     <Trash2 size={14} />
                   </button>
@@ -128,6 +194,7 @@ export const QueuePanel: React.FC<QueuePanelProps> = ({
             </div>
           )}
         </div>
+
       </div>
     </div>
   );

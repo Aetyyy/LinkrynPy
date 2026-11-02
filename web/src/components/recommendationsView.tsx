@@ -26,20 +26,49 @@ export const RecommendationsView: React.FC<RecommendationsViewProps> = ({
   isSongLiked,
 }) => {
   return (
-    <section className="animate-fade-in">
+    <section>
       {/* Category Pills Filter */}
-      <div className="flex items-center gap-2 overflow-x-auto pb-4 mb-5 scrollbar-none">
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+          overflowX: 'auto',
+          paddingBottom: '16px',
+          marginBottom: '20px',
+          scrollbarWidth: 'none',
+        }}
+      >
         {categories.map((cat) => {
           const isActive = selectedCategory === cat;
           return (
             <button
               key={cat}
               onClick={() => onSelectCategory(cat)}
-              className={`px-4 py-1.5 rounded-full text-[12.5px] cursor-pointer whitespace-nowrap transition-all font-medium ${
-                isActive
-                  ? 'border border-blue-500 bg-blue-500/15 text-blue-300 font-semibold'
-                  : 'border border-slate-700/40 bg-[#131E30] text-slate-300 hover:bg-[#1A263B] hover:text-slate-100'
-              }`}
+              style={{
+                padding: '7px 16px',
+                borderRadius: '999px',
+                fontSize: '12.5px',
+                fontWeight: isActive ? '600' : '500',
+                border: isActive ? '1px solid var(--primary-blue)' : '1px solid var(--border-subtle)',
+                backgroundColor: isActive ? 'var(--active-blue-bg)' : 'var(--bg-surface)',
+                color: isActive ? 'var(--soft-blue)' : 'var(--text-secondary)',
+                cursor: 'pointer',
+                whiteSpace: 'nowrap',
+                transition: 'all 0.18s ease',
+              }}
+              onMouseEnter={(e) => {
+                if (!isActive) {
+                  e.currentTarget.style.backgroundColor = 'var(--bg-surface-hover)';
+                  e.currentTarget.style.color = 'var(--text-primary)';
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (!isActive) {
+                  e.currentTarget.style.backgroundColor = 'var(--bg-surface)';
+                  e.currentTarget.style.color = 'var(--text-secondary)';
+                }
+              }}
             >
               {cat}
             </button>
@@ -49,30 +78,79 @@ export const RecommendationsView: React.FC<RecommendationsViewProps> = ({
 
       {/* Grid of Recommendations */}
       {loading ? (
-        <div className="grid grid-cols-[repeat(auto-fill,minmax(180px,1fr))] gap-4.5">
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))',
+            gap: '18px',
+          }}
+        >
           {Array.from({ length: 8 }).map((_, i) => (
             <div
               key={i}
-              className="bg-[#131E30] rounded-xl p-3.5 border border-slate-700/30 animate-pulse"
+              style={{
+                backgroundColor: 'var(--bg-surface)',
+                borderRadius: '12px',
+                padding: '14px',
+                border: '1px solid var(--border-subtle)',
+              }}
+              className="animate-pulse"
             >
-              <div className="w-full aspect-square rounded-lg bg-slate-800/80 mb-3" />
-              <div className="h-3.5 rounded-sm bg-slate-800/80 w-4/5 mb-2" />
-              <div className="h-3 rounded-sm bg-slate-800/80 w-1/2" />
+              <div
+                style={{
+                  width: '100%',
+                  aspectRatio: '1/1',
+                  borderRadius: '8px',
+                  backgroundColor: 'var(--bg-surface-secondary)',
+                  marginBottom: '12px',
+                }}
+              />
+              <div
+                style={{
+                  height: '14px',
+                  borderRadius: '4px',
+                  backgroundColor: 'var(--bg-surface-secondary)',
+                  width: '80%',
+                  marginBottom: '8px',
+                }}
+              />
+              <div
+                style={{
+                  height: '12px',
+                  borderRadius: '4px',
+                  backgroundColor: 'var(--bg-surface-secondary)',
+                  width: '50%',
+                }}
+              />
             </div>
           ))}
         </div>
       ) : recommendations.length === 0 ? (
-        <div className="py-12 px-6 text-center bg-[#131E30] rounded-xl border border-slate-700/30">
-          <Sparkles size={32} className="text-blue-500 mx-auto mb-3" />
-          <h3 className="text-base font-semibold text-slate-200 mb-1">
+        <div
+          style={{
+            padding: '48px 24px',
+            textAlign: 'center',
+            backgroundColor: 'var(--bg-surface)',
+            borderRadius: '12px',
+            border: '1px solid var(--border-subtle)',
+          }}
+        >
+          <Sparkles size={32} color="var(--primary-blue)" style={{ margin: '0 auto 12px auto' }} />
+          <h3 style={{ fontSize: '16px', fontWeight: '600', color: 'var(--text-primary)', marginBottom: '4px' }}>
             Belum ada rekomendasi
           </h3>
-          <p className="text-[13px] text-slate-400">
+          <p style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
             Ganti kategori atau lakukan pencarian lagu untuk memulai.
           </p>
         </div>
       ) : (
-        <div className="grid grid-cols-[repeat(auto-fill,minmax(180px,1fr))] gap-4.5">
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))',
+            gap: '18px',
+          }}
+        >
           {recommendations.map((track, idx) => {
             const liked = isSongLiked(track.url);
             return (
@@ -80,14 +158,43 @@ export const RecommendationsView: React.FC<RecommendationsViewProps> = ({
                 key={track.url || idx}
                 onContextMenu={(e) => onContextMenu(e, track)}
                 onClick={() => onPlaySong(track)}
-                className="group bg-[#131E30] hover:bg-[#1A263B] p-3.5 rounded-xl border border-slate-700/30 flex flex-col cursor-pointer relative transition-all duration-200 hover:-translate-y-1 hover:shadow-lg hover:shadow-black/30"
+                style={{
+                  backgroundColor: 'var(--bg-surface)',
+                  padding: '14px',
+                  borderRadius: '12px',
+                  border: '1px solid var(--border-subtle)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  cursor: 'pointer',
+                  position: 'relative',
+                  transition: 'transform 0.18s ease, background-color 0.18s ease, box-shadow 0.18s ease',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = 'var(--bg-surface-elevated)';
+                  e.currentTarget.style.transform = 'translateY(-3px)';
+                  e.currentTarget.style.boxShadow = 'var(--shadow-md)';
+                  const playOverlay = e.currentTarget.querySelector('.rec-play-overlay') as HTMLElement;
+                  if (playOverlay) playOverlay.style.opacity = '1';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = 'var(--bg-surface)';
+                  e.currentTarget.style.transform = 'translateY(0)';
+                  e.currentTarget.style.boxShadow = 'none';
+                  const playOverlay = e.currentTarget.querySelector('.rec-play-overlay') as HTMLElement;
+                  if (playOverlay) playOverlay.style.opacity = '0';
+                }}
               >
                 {/* 1:1 Aspect Ratio Artwork */}
-                <div className="relative w-full aspect-square mb-3">
+                <div style={{ position: 'relative', width: '100%', aspectRatio: '1/1', marginBottom: '12px' }}>
                   <img
                     src={track.thumbnail || 'https://via.placeholder.com/180'}
                     alt={track.title}
-                    className="w-full h-full rounded-lg object-cover"
+                    style={{
+                      width: '100%',
+                      height: '100%',
+                      borderRadius: '8px',
+                      objectFit: 'cover',
+                    }}
                   />
 
                   {/* Discreet Like Button */}
@@ -97,37 +204,88 @@ export const RecommendationsView: React.FC<RecommendationsViewProps> = ({
                       onToggleLike(track);
                     }}
                     title={liked ? 'Hapus dari disukai' : 'Sukai lagu ini'}
-                    className="absolute top-2 right-2 w-7 h-7 rounded-full bg-slate-950/70 border border-slate-700/40 text-white flex items-center justify-center cursor-pointer backdrop-blur-xs hover:scale-110 transition-transform"
+                    style={{
+                      position: 'absolute',
+                      top: '8px',
+                      right: '8px',
+                      width: '28px',
+                      height: '28px',
+                      borderRadius: '50%',
+                      backgroundColor: 'rgba(11, 18, 32, 0.7)',
+                      border: 'none',
+                      color: liked ? 'var(--primary-blue)' : '#FFFFFF',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      cursor: 'pointer',
+                      backdropFilter: 'blur(4px)',
+                      transition: 'transform 0.15s ease',
+                    }}
+                    onMouseEnter={(e) => (e.currentTarget.style.transform = 'scale(1.1)')}
+                    onMouseLeave={(e) => (e.currentTarget.style.transform = 'scale(1)')}
                   >
-                    <Heart
-                      size={14}
-                      className={liked ? 'text-blue-400 fill-blue-400' : 'text-slate-200'}
-                    />
+                    <Heart size={14} fill={liked ? 'var(--primary-blue)' : 'none'} />
                   </button>
 
                   {/* Play Button Overlay on Card */}
-                  <div className="absolute bottom-2.5 right-2.5 w-9.5 h-9.5 rounded-full bg-blue-600 hover:bg-blue-500 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all duration-200 shadow-md shadow-black/50">
-                    <Play size={16} className="text-white fill-white ml-0.5" />
+                  <div
+                    className="rec-play-overlay"
+                    style={{
+                      position: 'absolute',
+                      bottom: '10px',
+                      right: '10px',
+                      width: '38px',
+                      height: '38px',
+                      borderRadius: '50%',
+                      backgroundColor: 'var(--primary-blue)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      opacity: 0,
+                      transition: 'opacity 0.18s ease, transform 0.15s ease',
+                      boxShadow: '0 4px 14px rgba(0, 0, 0, 0.4)',
+                    }}
+                  >
+                    <Play size={16} color="#FFFFFF" fill="#FFFFFF" style={{ marginLeft: '2px' }} />
                   </div>
                 </div>
 
                 {/* Track Information */}
-                <div className="min-w-0 flex-1 flex flex-col">
-                  <p className="text-[13.5px] font-semibold text-slate-100 truncate" title={track.title}>
+                <div style={{ minWidth: 0, flex: 1, display: 'flex', flexDirection: 'column' }}>
+                  <p
+                    style={{
+                      fontSize: '13.5px',
+                      fontWeight: '600',
+                      color: 'var(--text-primary)',
+                      whiteSpace: 'nowrap',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      margin: 0,
+                    }}
+                    title={track.title}
+                  >
                     {track.title}
                   </p>
                   <p
-                    className="text-xs text-slate-400 truncate mt-0.5 mb-1.5"
+                    style={{
+                      fontSize: '12px',
+                      color: 'var(--text-secondary)',
+                      whiteSpace: 'nowrap',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      marginTop: '3px',
+                      marginBottom: '6px',
+                    }}
                     title={track.uploader || track.artist || 'Artis'}
                   >
                     {track.uploader || track.artist || 'Artis'}
                   </p>
 
-                  <div className="mt-auto flex items-center justify-between pt-1">
-                    <span className="text-[11px] text-slate-400">
+                  <div style={{ marginTop: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
                       {track.duration_str || '--:--'}
                     </span>
-                    <span className="text-[10.5px] text-blue-400 font-semibold group-hover:translate-x-0.5 transition-transform">
+                    <span style={{ fontSize: '10.5px', color: 'var(--soft-blue)', fontWeight: '600' }}>
                       Putar ➔
                     </span>
                   </div>

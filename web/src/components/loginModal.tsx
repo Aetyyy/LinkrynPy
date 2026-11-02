@@ -16,53 +16,125 @@ export const LoginModal: React.FC<LoginModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-[99999] flex items-center justify-center p-5 bg-black/80 backdrop-blur-sm"
+      style={{
+        position: 'fixed',
+        inset: 0,
+        backgroundColor: 'rgba(0, 0, 0, 0.8)',
+        backdropFilter: 'blur(6px)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        zIndex: 99999,
+        padding: '20px',
+      }}
       onClick={onClose}
     >
       <div
-        className="relative w-full max-w-[440px] bg-[#152238] rounded-2xl border border-slate-700/30 p-8 sm:p-9 shadow-2xl text-center animate-fade-in"
+        style={{
+          width: '440px',
+          maxWidth: '100%',
+          backgroundColor: 'var(--bg-surface-elevated)',
+          borderRadius: '18px',
+          border: '1px solid var(--border-subtle)',
+          padding: '36px 32px',
+          boxShadow: 'var(--shadow-lg)',
+          textAlign: 'center',
+          position: 'relative',
+        }}
+        className="animate-fade-in"
         onClick={(e) => e.stopPropagation()}
       >
         <button
-          type="button"
           onClick={onClose}
-          className="absolute top-4 right-4 text-slate-400 hover:text-slate-100 p-1 cursor-pointer transition-colors"
-          aria-label="Tutup Modal"
+          style={{
+            position: 'absolute',
+            top: '16px',
+            right: '16px',
+            background: 'none',
+            border: 'none',
+            color: 'var(--text-muted)',
+            cursor: 'pointer',
+            padding: '4px',
+          }}
         >
           <X size={18} />
         </button>
 
         {/* Emblem */}
-        <div className="w-14 h-14 rounded-xl bg-[#2563EB] flex items-center justify-center mx-auto mb-4.5 shadow-[0_8px_24px_rgba(37,99,235,0.35)]">
-          <Disc3 size={30} className="text-white" />
+        <div
+          style={{
+            width: '56px',
+            height: '56px',
+            borderRadius: '14px',
+            backgroundColor: 'var(--primary-blue)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            margin: '0 auto 18px auto',
+            boxShadow: '0 8px 24px rgba(57, 120, 246, 0.35)',
+          }}
+        >
+          <Disc3 size={30} color="#FFFFFF" />
         </div>
 
-        <h2 className="text-xl font-extrabold tracking-tight text-slate-100 mb-2">
+        <h2 style={{ fontSize: '20px', fontWeight: '800', letterSpacing: '-0.4px', color: 'var(--text-primary)', marginBottom: '8px' }}>
           Hubungkan Akun Discord
         </h2>
-        <p className="text-[13px] text-slate-400 leading-relaxed mb-6">
+        <p style={{ fontSize: '13px', color: 'var(--text-secondary)', lineHeight: '1.6', marginBottom: '24px' }}>
           Masuk dengan akun Discord Anda untuk otomatis mendeteksi Voice Channel yang sedang Anda masuki, memutar lagu, dan mengontrol bot Linkryn.
         </p>
 
         {/* Discord Login Button */}
         <a
           href={`${apiBase}/api/auth/discord`}
-          className="flex items-center justify-center gap-2.5 w-full py-3 px-5 bg-[#5865F2] hover:bg-[#4752C4] text-white rounded-xl text-sm font-bold no-underline mb-3.5 shadow-[0_4px_14px_rgba(88,101,242,0.35)] transition-all hover:-translate-y-0.5 active:translate-y-0"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '10px',
+            width: '100%',
+            padding: '12px 20px',
+            backgroundColor: '#5865F2',
+            color: '#FFFFFF',
+            borderRadius: '10px',
+            fontSize: '14px',
+            fontWeight: '700',
+            textDecoration: 'none',
+            marginBottom: '14px',
+            boxShadow: '0 4px 14px rgba(88, 101, 242, 0.35)',
+            transition: 'background 0.18s ease, transform 0.15s ease',
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.backgroundColor = '#4752C4';
+            e.currentTarget.style.transform = 'translateY(-1px)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.backgroundColor = '#5865F2';
+            e.currentTarget.style.transform = 'translateY(0)';
+          }}
         >
           <LogIn size={18} />
           <span>Masuk dengan Discord</span>
         </a>
 
         <button
-          type="button"
           onClick={onClose}
-          className="text-xs text-slate-400 hover:text-slate-200 py-1.5 px-3 cursor-pointer transition-colors"
+          style={{
+            background: 'none',
+            border: 'none',
+            color: 'var(--text-muted)',
+            fontSize: '12.5px',
+            cursor: 'pointer',
+            padding: '6px 12px',
+          }}
+          onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--text-primary)')}
+          onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text-muted)')}
         >
           Lanjut Jelajahi (Mode Tamu)
         </button>
 
-        <div className="flex items-center justify-center gap-1.5 mt-5 text-slate-400 text-[11px]">
-          <ShieldCheck size={14} className="text-emerald-500" />
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', marginTop: '20px', color: 'var(--text-muted)', fontSize: '11px' }}>
+          <ShieldCheck size={14} color="var(--status-success)" />
           <span>Autentikasi aman melalui Discord OAuth2 Resmi</span>
         </div>
       </div>

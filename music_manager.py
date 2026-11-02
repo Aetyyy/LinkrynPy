@@ -116,13 +116,15 @@ class MusicManager(commands.Cog):
 
         # Jika target adalah Stage Channel, coba unsuppress (request to speak) agar audio dapat terdengar
         if voice_client and isinstance(target_channel, discord.StageChannel):
-            try:
-                await guild.change_voice_state(channel=target_channel, suppress=False)
-            except Exception:
+            bot_member = guild.me or (guild.get_member(self.bot.user.id) if self.bot.user else None)
+            if bot_member:
                 try:
-                    await guild.change_voice_state(channel=target_channel, request_to_speak=True)
+                    await bot_member.edit(suppress=False)
                 except Exception:
-                    pass
+                    try:
+                        await bot_member.request_to_speak()
+                    except Exception:
+                        pass
 
         if user_id:
             state.session_owner_id = user_id
@@ -135,18 +137,95 @@ class MusicManager(commands.Cog):
 
         return await self.join_or_move(user.voice.channel, user.id)
 
-    async def set_voice_channel_status(self, channel: discord.VoiceChannel | discord.StageChannel | None, status_text: str | None = None):
+    async def set_voice_channel_status(self, channel: discord.VoiceChannel | discord.StageChannel | None, status_text: str | None = None, notify_channel: discord.abc.Messageable | None = None):
         """Mengatur status Voice Channel di Discord untuk menampilkan lagu yang sedang diputar."""
         if not channel or not hasattr(channel, "id"):
             return
+
+        is_setting = bool(status_text and status_text.strip())
+
+        # Jika sedang membersihkan status (status_text=""), hapus memori notifikasi
+        if not is_setting:
+            notice_key = f"_status_notice_sent_{channel.id}"
+            if hasattr(self, notice_key):
+                try:
+                    delattr(self, notice_key)
+                except Exception:
+                    pass
+
+        # Periksa izin bot terlebih dahulu jika memungkinkan
+        if hasattr(channel, "permissions_for") and channel.guild and channel.guild.me:
+            perms = channel.permissions_for(channel.guild.me)
+            has_status_perm = getattr(perms, "set_voice_channel_status", False) or perms.manage_channels or perms.administrator
+            if not has_status_perm:
+                if is_setting:
+                    warn_key = f"_warn_status_perm_{channel.guild.id}_{channel.id}"
+                    if not getattr(self, warn_key, False):
+                        setattr(self, warn_key, True)
+                        print(f"⚠️ [Voice Status] Bot kekurangan permission 'Set Voice Channel Status' di #{channel.name} (server '{channel.guild.name}').")
+
+                    # Kirim notifikasi ramah ke chat Voice Channel (hanya sekali per sesi channel)
+                    notice_key = f"_status_notice_sent_{channel.id}"
+                    if not getattr(self, notice_key, False):
+                        setattr(self, notice_key, True)
+                        target_chat = notify_channel
+                        if not target_chat and hasattr(channel, "send"):
+                            target_chat = channel
+                        if not target_chat:
+                            target_chat = self.get_safe_text_channel(channel.guild)
+
+                        if target_chat and hasattr(target_chat, "send"):
+                            try:
+                                embed = discord.Embed(
+                                    title="ℹ️ Izin Status Saluran Suara Belum Aktif",
+                                    description=(
+                                        f"Bot tidak dapat menampilkan judul lagu di status **#{channel.name}** "
+                                        "karena bot belum memiliki izin **Set Voice Channel Status** (*Setel Status Saluran Suara*) di channel ini.\n\n"
+                                        "📌 **Solusi:**\n"
+                                        "• Pastikan role bot yang terpasang memiliki izin **Set Voice Channel Status** di Server Settings Discord.\n"
+                                        "• Jika ada 2 role bernama **Linkryn**, pastikan role yang memiliki izin sudah terpasang pada akun bot (Klik profil bot di daftar anggota ➔ tambahkan role tersebut).\n"
+                                        "• Atau tambahkan izin tersebut langsung di pengaturan saluran ini (*Edit Channel ➔ Permissions*)."
+                                    ),
+                                    color=discord.Color.from_rgb(59, 130, 246)
+                                )
+                                self.bot.loop.create_task(target_chat.send(embed=embed))
+                            except Exception as ex:
+                                print(f"[Voice Status Notice Error] {ex}")
+                return
+
         try:
             from discord.http import Route
             route = Route('PUT', '/channels/{channel_id}/voice-status', channel_id=channel.id)
             cleaned = (status_text[:497] + "...") if status_text and len(status_text) > 500 else (status_text or "")
             await self.bot.http.request(route, json={'status': cleaned})
-        except Exception:
-            # Tidak mengganggu bot jika channel atau server tidak mengizinkan voice status update
-            pass
+        except discord.Forbidden as e:
+            warn_key = f"_warn_status_forbidden_{channel.guild.id}_{channel.id}"
+            if not getattr(self, warn_key, False):
+                setattr(self, warn_key, True)
+                print(f"⚠️ [Voice Status] 403 Forbidden saat mengubah status di #{channel.name} ({channel.guild.name}): {e}. Pastikan role bot memiliki izin 'Set Voice Channel Status'.")
+
+            if is_setting:
+                notice_key = f"_status_notice_sent_{channel.id}"
+                if not getattr(self, notice_key, False):
+                    setattr(self, notice_key, True)
+                    target_chat = notify_channel or (channel if hasattr(channel, "send") else None) or self.get_safe_text_channel(channel.guild)
+                    if target_chat and hasattr(target_chat, "send"):
+                        try:
+                            embed = discord.Embed(
+                                title="ℹ️ Izin Status Saluran Suara Belum Aktif",
+                                description=(
+                                    f"Discord menolak pembaruan status di **#{channel.name}** (`403 Forbidden: Missing Permissions`).\n\n"
+                                    "📌 **Solusi:**\n"
+                                    "• Pastikan role yang terpasang pada bot memiliki izin **Set Voice Channel Status** di Server Settings Discord.\n"
+                                    "• Jika terdapat 2 role bernama **Linkryn**, pastikan role dengan izin tersebut sudah terpasang pada akun bot."
+                                ),
+                                color=discord.Color.gold()
+                            )
+                            self.bot.loop.create_task(target_chat.send(embed=embed))
+                        except Exception:
+                            pass
+        except Exception as e:
+            print(f"⚠️ [Voice Status Error] {e}")
 
     def get_safe_text_channel(self, guild: discord.Guild, preferred_channel: discord.abc.Messageable | None = None) -> discord.abc.Messageable | None:
         vc = guild.voice_client
@@ -191,8 +270,10 @@ class MusicManager(commands.Cog):
     # ==========================
     @commands.Cog.listener()
     async def on_voice_state_update(self, member: discord.Member, before: discord.VoiceState, after: discord.VoiceState):
-        # Mencegah loop/duplicate: abaikan event voice state dari bot itu sendiri
+        # Tangani jika bot itu sendiri yang terputus atau dipindahkan ke channel lain
         if member.id == self.bot.user.id:
+            if before.channel and (not after.channel or before.channel != after.channel):
+                self.bot.loop.create_task(self.set_voice_channel_status(before.channel, ""))
             return
 
         # Sinkronkan status dashboard secara instan ke browser jika ada user yang masuk, keluar, atau pindah Voice Channel
@@ -365,13 +446,14 @@ class MusicManager(commands.Cog):
                         print(f"[Player Error] {error}")
                     self.play_next(guild, text_channel)
 
-                state.is_restarting = False
+                state.is_restarting = True
                 if vc.is_playing() or vc.is_paused():
                     vc.stop()
                     for _ in range(20):
                         if not vc.is_playing() and not vc.is_paused():
                             break
                         await asyncio.sleep(0.05)
+                state.is_restarting = False
 
                 if vc.is_connected():
                     state.current.start_time = time.time() - seek_seconds
@@ -379,6 +461,9 @@ class MusicManager(commands.Cog):
                     state.current.total_paused_duration = 0.0
                     vc.play(source, after=after_playback)
                     await self.update_nowplaying_card(guild, text_channel)
+                    dashboard = getattr(self.bot, "web_dashboard", None)
+                    if dashboard:
+                        self.bot.loop.create_task(dashboard.broadcast_status())
 
             except Exception as e:
                 state.is_restarting = False
@@ -615,80 +700,275 @@ class MusicManager(commands.Cog):
             "top radio pop hits official audio"
         ]
 
-    async def fetch_autoplay_song(self, guild: discord.Guild, last_song: Song) -> Song | None:
+    GENRE_CONFIGS = {
+        "jawa_koplo": {
+            "name": "Pop Jawa & Dangdut Koplo",
+            "artists": [
+                "Denny Caknan", "Guyon Waton", "Gilga Sahid", "Lavora", "Masdddho",
+                "Happy Asmara", "Niken Salindry", "NDX AKA", "Aftershine", "Shinta Arsinta",
+                "Difarina Indra", "Damara De", "Wawes", "Esa Risty", "Wahyu F Giri",
+                "Didi Kempot", "Hendra Kumbara", "Bagas Ran", "Ilux ID"
+            ],
+            "genre_queries": [
+                "lagu dangdut koplo jawa hits official music video",
+                "lagu pop jawa terbaru hits official audio",
+                "dangdut koplo viral official audio",
+                "lagu campursari koplo hits single official",
+                "lagu pop jawa akustik santai hits official"
+            ]
+        },
+        "akustik_indo": {
+            "name": "Pop Akustik & Indie Folk Indonesia",
+            "artists": [
+                "Bernadya", "Feby Putri", "Nadin Amizah", "Sal Priadi", "Fiersa Besari",
+                "Fourtwnty", "Payung Teduh", "Daun Jatuh", "Nadhif Basalamah", "Soegi Bornean",
+                "Idgitaf", "Batas Senja", "Budi Doremi", "Raim Laode", "Ardhito Pramono",
+                "Danilla", "Tami Aulia", "Felix Irwan", "Aviwkila", "Hal", "Dere", "Monita Tahalea"
+            ],
+            "genre_queries": [
+                "lagu pop akustik indonesia hits single official",
+                "lagu akustik cafe senja indonesia official audio",
+                "lagu indie folk indonesia official audio",
+                "lagu akustik santai indonesia hits official",
+                "lagu pop indie santai indonesia official video"
+            ]
+        },
+        "pop_indo": {
+            "name": "Pop Indonesia",
+            "artists": [
+                "Tulus", "Mahalini", "Tiara Andini", "Sheila on 7", "Yura Yunita",
+                "Rizky Febian", "Lyodra", "Keisya Levronka", "Ziva Magnolya", "Judika",
+                "Glenn Fredly", "Kerispatih", "Samsons", "Dewa 19", "Padi Reborn",
+                "Noah", "Juicy Luicy", "Hindia", "Anggi Marito", "Fabio Asher",
+                "Stevan Pasaribu", "Raisa", "Afgan", "Rossa", "Armada", "D'Masiv", "Geisha", "Ada Band"
+            ],
+            "genre_queries": [
+                "lagu pop indonesia terpopuler viral official audio",
+                "lagu pop indonesia hits terbaru official music video",
+                "lagu galau indonesia hits single official audio",
+                "top hits pop indonesia official audio",
+                "lagu pop indonesia santai enak didengar official"
+            ]
+        },
+        "jpop_anime": {
+            "name": "J-Pop & Anime OST",
+            "artists": [
+                "Yoasobi", "Ado", "Eve", "Aimer", "LiSA", "Kenshi Yonezu", "Vaundy",
+                "King Gnu", "Official HIGE DANDism", "Yuuri", "Fujii Kaze", "Radwimps",
+                "Milet", "Tuyu", "Minami", "Yorushika", "ZUTOMAYO", "Mrs. GREEN APPLE", "back number", "sumika"
+            ],
+            "genre_queries": [
+                "popular jpop anime songs official audio",
+                "j-pop hits music official video",
+                "japan top hits j-pop songs official audio",
+                "japanese anime ost popular songs single official"
+            ]
+        },
+        "kpop": {
+            "name": "K-Pop",
+            "artists": [
+                "BTS", "BLACKPINK", "TWICE", "NewJeans", "aespa", "Stray Kids",
+                "IVE", "LE SSERAFIM", "SEVENTEEN", "ENHYPEN", "ITZY", "TXT",
+                "Red Velvet", "(G)I-DLE", "BABYMONSTER", "ILLIT", "RIIZE", "NCT 127", "EXO", "ATEEZ"
+            ],
+            "genre_queries": [
+                "kpop top hits official music video",
+                "popular k-pop songs official audio",
+                "k-pop trending music video single official",
+                "kpop best hits official audio"
+            ]
+        },
+        "rock_metal": {
+            "name": "Rock & Metal",
+            "artists": [
+                "Linkin Park", "Metallica", "Avenged Sevenfold", "Slipknot", "Queen",
+                "Oasis", "Green Day", "Muse", "Bon Jovi", "Guns N' Roses",
+                "Bring Me The Horizon", "Paramore", "My Chemical Romance", "Foo Fighters",
+                "System of a Down", "Nirvana", "Red Hot Chili Peppers", "ONE OK ROCK"
+            ],
+            "genre_queries": [
+                "modern rock alternative hits official audio",
+                "rock hits popular official music video",
+                "classic rock greatest hits official audio",
+                "top rock metal hits single official"
+            ]
+        },
+        "western_acoustic": {
+            "name": "Western Acoustic & Indie",
+            "artists": [
+                "Ed Sheeran", "Jeremy Zucker", "Lauv", "Alec Benjamin", "Stephen Sanchez",
+                "d4vd", "BoyWithUke", "Vance Joy", "Passenger", "Dean Lewis",
+                "James Arthur", "Kodaline", "Lewis Capaldi", "Sasha Alex Sloan"
+            ],
+            "genre_queries": [
+                "acoustic pop hits official audio",
+                "acoustic chill indie songs official music video",
+                "warm acoustic relaxing songs official audio"
+            ]
+        },
+        "western_pop": {
+            "name": "Western Pop",
+            "artists": [
+                "Bruno Mars", "The Weeknd", "Dua Lipa", "Billie Eilish", "Sabrina Carpenter",
+                "Post Malone", "Olivia Rodrigo", "Benson Boone", "Teddy Swims", "Ariana Grande",
+                "Taylor Swift", "Harry Styles", "Shawn Mendes", "Charlie Puth", "Justin Bieber",
+                "Adele", "Maroon 5", "Katy Perry", "Sam Smith", "Lady Gaga"
+            ],
+            "genre_queries": [
+                "top radio pop hits official audio",
+                "pop hits songs official music video",
+                "global top pop hits official audio",
+                "popular billboard pop hits official video"
+            ]
+        }
+    }
+
+    @classmethod
+    def clean_artist_name(cls, uploader: str) -> str:
+        """Membersihkan nama artis dari embel-embel Channel, Topic, VEVO, atau emoji Autoplay."""
+        if not uploader:
+            return ""
         import re
+        clean = re.sub(r'[\U00010000-\U0010ffff]|[\u2600-\u27ff]|autoplay|•', '', uploader, flags=re.IGNORECASE)
+        clean = re.sub(r'(?i)\b(topic|vevo|official|channel|records|music|audio|video|tv|entertainment|production)\b', '', clean)
+        return ' '.join(clean.split()).strip(' -•|')
+
+    @classmethod
+    def _is_candidate_matching_genre(cls, cand_full: str, cand_title: str, cand_uploader: str, category: str) -> bool:
+        """Memvalidasi apakah lagu kandidat benar-benar sesuai dengan genre musik yang sedang aktif."""
+        import re
+        if category in ["akustik_indo", "jawa_koplo", "pop_indo"]:
+            if any(w in cand_full for w in cls.WESTERN_BLOCKED_ARTISTS):
+                return False
+            if not cls.is_indonesian_song(cand_title, cand_uploader):
+                return False
+
+            if category == "jawa_koplo":
+                jawa_words = [
+                    "jawa", "jowo", "koplo", "dangdut", "campursari", "lavora", "damara", "caknan",
+                    "asmara", "gilga", "salindry", "safari", "adella", "kisinan", "dumes", "rasah",
+                    "ora", "ati", "tresno", "sayang", "kembang", "lungo", "loro", "konco", "banyu",
+                    "cidro", "bojo", "nemen", "klebus", "kartonyono", "wirang", "cundamani", "sigar",
+                    "sekti", "pelanggaran", "alum", "gampil", "teteg", "masdddho", "wawes", "aftershine"
+                ]
+                matched_jawa = False
+                for jw in jawa_words:
+                    if len(jw) <= 4:
+                        if re.search(r'\b' + re.escape(jw) + r'\b', cand_full):
+                            matched_jawa = True
+                            break
+                    else:
+                        if jw in cand_full:
+                            matched_jawa = True
+                            break
+                return matched_jawa
+
+            if category == "akustik_indo":
+                indo_acoustic_artists = [
+                    "bernadya", "feby putri", "nadin amizah", "fiersa besari", "sal priadi",
+                    "fourtwnty", "payung teduh", "daun jatuh", "soegi bornean", "batas senja",
+                    "idgitaf", "danilla", "ardhito", "budi doremi", "raim laode", "nadhif basalamah",
+                    "felix irwan", "tami aulia", "aviwkila", "chintya gabriella", "mario g klau",
+                    "aruma", "fadhilah intan", "hal"
+                ]
+                is_acoustic_artist = any(a in cand_full for a in indo_acoustic_artists)
+                acoustic_words = ["akustik", "acoustic", "santai", "cafe", "cover", "lirik", "pop", "senja", "folk", "indie"]
+                return is_acoustic_artist or any(aw in cand_full for aw in acoustic_words)
+
+            return True
+
+        if category == "jpop_anime":
+            jpop_indicators = ["yoasobi", "ado", "eve", "aimer", "lisa", "kessoku", "anime", "ost", "j-pop", "jpop", "vocaloid", "radwimps", "kenshi yonezu", "vaundy", "japan", "japanese"]
+            return any(jp in cand_full for jp in jpop_indicators)
+
+        if category == "kpop":
+            kpop_indicators = ["bts", "blackpink", "twice", "newjeans", "aespa", "stray kids", "kpop", "k-pop", "ive", "le sserafim", "seventeen", "enhypen", "exo", "itzy", "korean"]
+            return any(kp in cand_full for kp in kpop_indicators)
+
+        if category == "rock_metal":
+            rock_indicators = ["linkin park", "metallica", "avenged", "slipknot", "queen", "oasis", "green day", "muse", "rock", "metal", "bon jovi", "guns n roses", "bring me the horizon", "paramore", "my chemical romance", "nirvana", "foo fighters"]
+            return any(r in cand_full for r in rock_indicators)
+
+        if category == "western_acoustic":
+            acoustic_words = ["acoustic", "chill", "folk", "unplugged", "indie", "relaxing"]
+            return any(aw in cand_full for aw in acoustic_words)
+
+        return True
+
+    async def fetch_autoplay_song(self, guild: discord.Guild, last_song: Song) -> Song | None:
+        """
+        Menemukan lagu autoplay berikutnya berdasarkan GENRE MUSIK yang sama,
+        secara ketat menghindari pengulangan nama penyanyi yang sama secara berturut-turut.
+        """
+        import re
+        import random
         state = self.get_guild_state(guild.id)
         raw_title = last_song.title
         
-        # Clean title
+        # Bersihkan judul lagu
         clean_title = re.sub(r'[\(\[\{][^\)\]\}]*[\)\]\}]', '', raw_title)
         clean_title = re.sub(r'(?i)\b(official|video|music|audio|lyrics?|remastered|hd|4k|mv|feat\.?|ft\.?)\b', '', clean_title)
         clean_title = ' '.join(clean_title.split()).strip(' -')
 
-        # Clean artist name - specifically remove Autoplay prefix/emojis
-        clean_artist = re.sub(r'[\U00010000-\U0010ffff]|[\u2600-\u27ff]|autoplay|•', '', last_song.uploader, flags=re.IGNORECASE)
-        clean_artist = re.sub(r'(?i)\b(topic|vevo|official|channel|records|music|audio|video|tv|entertainment|production)\b', '', clean_artist).strip(' -')
+        # Dapatkan nama artis lagu yang baru saja selesai
+        current_artist = self.clean_artist_name(last_song.uploader)
+        if not current_artist and " - " in raw_title:
+            current_artist = self.clean_artist_name(raw_title.split(" - ")[0])
 
-        if not state.preferred_genre_keywords or state.preferred_genre_category == "general":
+        # Sinkronkan daftar riwayat artis yang sudah diputar pada state
+        if not hasattr(state, 'recent_autoplay_artists') or state.recent_autoplay_artists is None:
+            state.recent_autoplay_artists = []
+        if current_artist and current_artist.lower() not in [a.lower() for a in state.recent_autoplay_artists]:
+            state.recent_autoplay_artists.append(current_artist)
+            if len(state.recent_autoplay_artists) > 12:
+                state.recent_autoplay_artists.pop(0)
+
+        # 1. Kunci atau sinkronkan genre berdasarkan lagu jika diputar oleh pengguna
+        if not getattr(last_song, 'is_autoplay', False) or state.preferred_genre_category == "general":
             cat, kws = self.detect_genre_keywords(raw_title, last_song.uploader)
             state.preferred_genre_category = cat
             state.preferred_genre_keywords = kws
 
         category = state.preferred_genre_category
+        genre_config = self.GENRE_CONFIGS.get(category, self.GENRE_CONFIGS["pop_indo"])
+        genre_artists = genre_config.get("artists", [])
+        genre_queries = list(genre_config.get("genre_queries", []))
 
+        # 2. SELEKSI ARTIS LAIN DALAM GENRE (Mencegah pengulangan penyanyi yang sama terus-menerus)
+        recent_artists_lower = {a.lower() for a in state.recent_autoplay_artists if a}
+        if current_artist:
+            recent_artists_lower.add(current_artist.lower())
+
+        # Prioritaskan artis dalam genre yang BELUM diputar baru-baru ini
+        available_artists = [a for a in genre_artists if a.lower() not in recent_artists_lower]
+        if not available_artists:
+            # Jika semua artis dalam pool sudah pernah diputar, reset dan hanya hindari artis yang baru selesai
+            available_artists = [a for a in genre_artists if a.lower() != (current_artist.lower() if current_artist else "")]
+            if not available_artists:
+                available_artists = genre_artists[:]
+
+        sample_artists = list(available_artists)
+        random.shuffle(sample_artists)
+        random.shuffle(genre_queries)
+
+        # 3. Bentuk daftar query pencarian yang berfokus pada GENRE dan variasi artis lain
         search_terms = []
-        if clean_artist:
-            if category == "akustik_indo":
-                search_terms.append(f"{clean_artist} official music video")
-                search_terms.append(f"{clean_artist} official audio")
-                search_terms.append(f"lagu seperti {clean_artist} single")
-            elif category == "jawa_koplo":
-                search_terms.append(f"{clean_artist} official music video")
-                search_terms.append(f"{clean_artist} official audio")
-                search_terms.append(f"lagu seperti {clean_artist} single")
-            elif category == "pop_indo":
-                search_terms.append(f"{clean_artist} official music video")
-                search_terms.append(f"{clean_artist} official audio")
-            elif category == "jpop_anime":
-                search_terms.append(f"{clean_artist} official audio")
-            elif category == "kpop":
-                search_terms.append(f"{clean_artist} official music video")
-            else:
-                search_terms.append(f"{clean_artist} official music video")
+        # Tambahkan query artis lain dalam genre yang sama
+        for art in sample_artists[:4]:
+            search_terms.append(f"{art} official music video")
+            search_terms.append(f"{art} official audio")
 
-        for g_kw in state.preferred_genre_keywords:
-            search_terms.append(g_kw)
-
-        # Genre-specific artist anchors to keep genre perfectly locked
-        if category == "jawa_koplo":
-            search_terms.extend([
-                "Denny Caknan official music video",
-                "Guyon Waton official video",
-                "Gilga Sahid official music video",
-                "Lavora official video",
-                "Masdddho official music video"
-            ])
-        elif category == "akustik_indo":
-            search_terms.extend([
-                "Bernadya official music video",
-                "Feby Putri official video",
-                "Nadin Amizah official audio",
-                "Sal Priadi official music video",
-                "Fiersa Besari official audio"
-            ])
-        elif category == "pop_indo":
-            search_terms.extend([
-                "Tulus official music video",
-                "Mahalini official music video",
-                "Tiara Andini official music video",
-                "Sheila on 7 official audio"
-            ])
+        # Tambahkan query tema genre umum
+        for gq in genre_queries:
+            if gq not in search_terms:
+                search_terms.append(gq)
 
         current_title_lower = clean_title.lower()
+        fallback_candidates = []
 
         for query in search_terms:
             try:
-                entries = await YTDLSource.extract_search_list(query, max_results=10, loop=self.bot.loop)
+                entries = await YTDLSource.extract_search_list(query, max_results=8, loop=self.bot.loop)
                 for entry in entries:
                     cand_title = entry.get('title', '')
                     cand_uploader = entry.get('uploader', '')
@@ -696,82 +976,65 @@ class MusicManager(commands.Cog):
                     cand_full = f"{cand_lower} {cand_uploader.lower()}"
                     duration = entry.get('duration')
 
-                    # 1. STRICT DURATION CHECK (75s s/d 630s = 1m15s s/d 10m30s)
-                    # Automatically avoids 1-hour, 2-hour compilations and livestreams!
+                    # 1. CEK DURASI KETAT (75s s/d 630s = 1m15s s/d 10m30s)
                     if not duration or duration < 75 or duration > 630 or entry.get('is_live'):
                         continue
 
-                    # 2. TITLE COMPILATION & NON-SINGLE BLACKLIST
+                    # 2. BLACKLIST KOMPILASI & NON-SINGLE
                     if any(re.search(pat, cand_lower) for pat in self.COMPILATION_PATTERNS):
                         continue
 
-                    # 3. TITLE DUPLICATE CHECK
+                    # 3. CEK DUPLIKASI JUDUL LAGU
                     if current_title_lower in cand_lower or cand_lower in current_title_lower:
                         continue
                     if cand_lower in state.played_titles:
                         continue
 
-                    # 4. STRICT GENRE VALIDATION
-                    if category in ["akustik_indo", "jawa_koplo", "pop_indo"]:
-                        if any(w in cand_full for w in self.WESTERN_BLOCKED_ARTISTS):
-                            continue
-                        
-                        if not self.is_indonesian_song(cand_title, cand_uploader):
-                            continue
-
-                        if category == "jawa_koplo":
-                            jawa_words = [
-                                "jawa", "jowo", "koplo", "dangdut", "campursari", "lavora", "damara", "caknan",
-                                "asmara", "gilga", "salindry", "safari", "adella", "kisinan", "dumes", "rasah",
-                                "ora", "ati", "tresno", "sayang", "kembang", "lungo", "loro", "konco", "banyu",
-                                "cidro", "bojo", "nemen", "klebus", "kartonyono", "wirang", "cundamani", "sigar",
-                                "sekti", "pelanggaran", "alum", "gampil", "teteg", "masdddho", "wawes", "aftershine"
-                            ]
-                            # Word boundary match for short words
-                            matched_jawa = False
-                            for jw in jawa_words:
-                                if len(jw) <= 4:
-                                    if re.search(r'\b' + re.escape(jw) + r'\b', cand_full):
-                                        matched_jawa = True
-                                        break
-                                else:
-                                    if jw in cand_full:
-                                        matched_jawa = True
-                                        break
-                            if not matched_jawa:
-                                continue
-
-                        if category == "akustik_indo":
-                            indo_acoustic_artists = [
-                                "bernadya", "feby putri", "nadin amizah", "fiersa besari", "sal priadi",
-                                "fourtwnty", "payung teduh", "daun jatuh", "soegi bornean", "batas senja",
-                                "idgitaf", "danilla", "ardhito", "budi doremi", "raim laode", "nadhif basalamah",
-                                "felix irwan", "tami aulia", "aviwkila", "chintya gabriella", "mario g klau",
-                                "aruma", "fadhilah intan", "hal"
-                            ]
-                            is_acoustic_artist = any(a in cand_full for a in indo_acoustic_artists)
-                            acoustic_words = ["akustik", "acoustic", "santai", "cafe", "cover", "lirik", "pop", "senja", "folk", "indie"]
-                            if not is_acoustic_artist and not any(aw in cand_full for aw in acoustic_words):
-                                continue
-
-                    elif category == "jpop_anime":
-                        jpop_indicators = ["yoasobi", "ado", "eve", "aimer", "lisa", "kessoku", "anime", "ost", "j-pop", "jpop", "vocaloid", "radwimps", "kenshi yonezu", "vaundy", "japan", "japanese"]
-                        if not any(jp in cand_full for jp in jpop_indicators):
+                    # 4. ATURAN KRUSIAL: ANTI-SAME-SINGER (Jangan mengikuti penyanyi yang sama)
+                    if current_artist and len(current_artist) >= 3:
+                        art_low = current_artist.lower()
+                        # Tolak jika nama penyanyi terakhir ada di uploader atau judul
+                        if art_low in cand_uploader.lower() or art_low in cand_lower:
                             continue
 
-                    elif category == "kpop":
-                        kpop_indicators = ["bts", "blackpink", "twice", "newjeans", "aespa", "stray kids", "kpop", "k-pop", "ive", "le sserafim", "seventeen", "enhypen", "exo", "itzy", "korean"]
-                        if not any(kp in cand_full for kp in kpop_indicators):
-                            continue
+                    # Periksa apakah artis ini sudah diputar dalam 4 lagu autoplay terakhir
+                    is_recent_singer = False
+                    for past_a in state.recent_autoplay_artists[-4:]:
+                        if past_a and len(past_a) >= 3 and (past_a.lower() in cand_uploader.lower() or past_a.lower() in cand_lower):
+                            is_recent_singer = True
+                            break
+                    if is_recent_singer:
+                        fallback_candidates.append(entry)
+                        continue
 
-                    # 5. VALID CANDIDATE FOUND
+                    # 5. VALIDASI KESESUAIAN GENRE MUSIK
+                    if not self._is_candidate_matching_genre(cand_full, cand_title, cand_uploader, category):
+                        continue
+
+                    # 6. KANDIDAT VALID DITEMUKAN DARI GENRE YANG SAMA DAN ARTIS BERBEDA
                     dummy_requester = guild.me
                     recommended_song = Song(entry, dummy_requester)
                     recommended_song.is_autoplay = True
                     state.played_titles.add(cand_lower)
+
+                    new_art = self.clean_artist_name(recommended_song.uploader)
+                    if new_art:
+                        state.recent_autoplay_artists.append(new_art)
+                        if len(state.recent_autoplay_artists) > 12:
+                            state.recent_autoplay_artists.pop(0)
+
                     return recommended_song
             except Exception:
                 continue
+
+        # Jika loop selesai dan tidak ada artis yang benar-benar baru, gunakan kandidat fallback
+        if fallback_candidates:
+            cand_entry = fallback_candidates[0]
+            dummy_requester = guild.me
+            recommended_song = Song(cand_entry, dummy_requester)
+            recommended_song.is_autoplay = True
+            state.played_titles.add(cand_entry.get('title', '').lower().strip())
+            return recommended_song
 
         return None
 
@@ -780,6 +1043,11 @@ class MusicManager(commands.Cog):
         voice_client = guild.voice_client
 
         if not voice_client or not voice_client.is_connected():
+            state.is_loading = False
+            return
+
+        # Cegah race condition jika lagu berikutnya sedang dalam proses pemuatan/ekstraksi
+        if state.is_loading:
             return
 
         if state.auto_leave_task and not state.auto_leave_task.done():
@@ -800,20 +1068,38 @@ class MusicManager(commands.Cog):
             next_song = state.next()
 
         if not next_song and state.autoplay and last_ended_song:
+            state.is_loading = True
             async def handle_autoplay():
-                auto_song = await self.fetch_autoplay_song(guild, last_ended_song)
-                if auto_song:
-                    state.add(auto_song)
-                    self.play_next(guild, text_channel)
-                else:
-                    self._start_auto_leave(guild, text_channel)
+                try:
+                    auto_song = await self.fetch_autoplay_song(guild, last_ended_song)
+                    if auto_song:
+                        state.add(auto_song)
+                        vc = guild.voice_client
+                        if vc and vc.is_connected() and not vc.is_playing() and not vc.is_paused():
+                            state.is_loading = False
+                            self.play_next(guild, text_channel)
+                            return
+                    else:
+                        vc = guild.voice_client
+                        if vc and vc.channel:
+                            self.bot.loop.create_task(self.set_voice_channel_status(vc.channel, ""))
+                        self._start_auto_leave(guild, text_channel)
+                finally:
+                    state.is_loading = False
 
             self.bot.loop.create_task(handle_autoplay())
             return
 
         if not next_song:
+            state.is_loading = False
+            vc = guild.voice_client
+            if vc and vc.channel:
+                self.bot.loop.create_task(self.set_voice_channel_status(vc.channel, ""))
             self._start_auto_leave(guild, text_channel)
             return
+
+        # Tandai bahwa lagu ini sedang dalam proses persiapan dan pemuatan
+        state.is_loading = True
 
         if state.autoplay:
             async def background_prefetch():
@@ -836,6 +1122,7 @@ class MusicManager(commands.Cog):
                         safe_channel = self.get_safe_text_channel(guild, text_channel)
                         if safe_channel:
                             await safe_channel.send(f"⚠️ Lagu **{next_song.title}** tidak dapat diputar (video dibatasi/dihapus). Melanjutkan ke lagu berikutnya...")
+                        state.is_loading = False
                         self.play_next(guild, text_channel)
                         return
 
@@ -864,18 +1151,23 @@ class MusicManager(commands.Cog):
                     source = discord.PCMVolumeTransformer(raw_source, volume=state.volume)
 
                     def after_playback(error):
+                        # Jika is_restarting aktif, jangan picu play_next karena audio dihentikan sengaja oleh proses internal
                         if state.is_restarting:
                             return
                         if error:
                             print(f"[Player Error] {error}")
                         self.play_next(guild, text_channel)
 
+                    # KUNCI KRUSIAL: Aktifkan is_restarting sebelum menghentikan audio lama
+                    # agar after_playback lagu sebelumnya TIDAK memicu play_next baru secara liar!
+                    state.is_restarting = True
                     if vc.is_playing() or vc.is_paused():
                         vc.stop()
                         for _ in range(20):
                             if not vc.is_playing() and not vc.is_paused():
                                 break
                             await asyncio.sleep(0.05)
+                    state.is_restarting = False
 
                     if not vc.is_connected():
                         return
@@ -885,12 +1177,18 @@ class MusicManager(commands.Cog):
                     next_song.total_paused_duration = 0.0
                     vc.play(source, after=after_playback)
 
+                    dashboard = getattr(self.bot, "web_dashboard", None)
+                    if dashboard:
+                        self.bot.loop.create_task(dashboard.broadcast_status())
+
+                    safe_channel = self.get_safe_text_channel(guild, text_channel)
+
                     # Perbarui status Voice Channel di Discord untuk menampilkan lagu yang sedang diputar
                     if vc.channel:
                         vc_status = f"🎶 {next_song.title}"
                         if next_song.uploader:
                             vc_status = f"🎶 {next_song.title} • {next_song.uploader}"
-                        await self.set_voice_channel_status(vc.channel, vc_status)
+                        await self.set_voice_channel_status(vc.channel, vc_status, notify_channel=safe_channel)
 
                     if state.last_nowplaying_msg:
                         try:
@@ -903,7 +1201,6 @@ class MusicManager(commands.Cog):
                     user_id_str = str(next_song.requester.id) if next_song.requester else None
                     await db.add_history(str(guild.id), next_song.data, user_id=user_id_str)
 
-                    safe_channel = self.get_safe_text_channel(guild, text_channel)
                     if safe_channel:
                         try:
                             embed = self.create_nowplaying_embed(state, next_song)
@@ -926,6 +1223,8 @@ class MusicManager(commands.Cog):
                     vc = guild.voice_client
                     if vc and vc.is_connected() and not isinstance(e, discord.errors.ClientException):
                         self.play_next(guild, text_channel)
+                finally:
+                    state.is_loading = False
 
         self.bot.loop.create_task(_start_playing())
 
@@ -966,7 +1265,11 @@ class MusicManager(commands.Cog):
         )
         elapsed, bar = song.get_progress()
         embed.add_field(name="Progress", value=f"`{bar}`\n`{song.format_duration(elapsed)} / {song.format_duration()}`", inline=False)
-        artist_display = f"📻 Autoplay • {song.uploader}" if getattr(song, 'is_autoplay', False) else song.uploader
+        if getattr(song, 'is_autoplay', False):
+            genre_name = self.GENRE_CONFIGS.get(state.preferred_genre_category, {}).get("name", "Genre Sejenis")
+            artist_display = f"📻 Autoplay ({genre_name}) • {song.uploader}"
+        else:
+            artist_display = song.uploader
         embed.add_field(name="Artis / Channel", value=artist_display, inline=True)
         embed.add_field(name="Diminta oleh", value=song.requester.mention, inline=True)
         embed.add_field(name="Volume", value=f"{int(state.volume * 100)}%", inline=True)
@@ -1070,6 +1373,30 @@ class MusicManager(commands.Cog):
             color=discord.Color.magenta()
         )
 
+    async def fetch_sponsorblock_offset(self, video_id: str) -> float:
+        """Memeriksa segmen non-musik di awal video via SponsorBlock API (category=music_offtopic)."""
+        if not video_id:
+            return 0.0
+        import aiohttp
+        url = f"https://sponsor.ajay.app/api/skipSegments?videoID={video_id}&category=music_offtopic"
+        headers = {'User-Agent': 'LinkrynMusicBot/2.0 (Mozilla/5.0)'}
+        try:
+            async with aiohttp.ClientSession(headers=headers) as session:
+                async with session.get(url, timeout=aiohttp.ClientTimeout(total=2.5)) as resp:
+                    if resp.status == 200:
+                        segments = await resp.json()
+                        if isinstance(segments, list):
+                            for seg in segments:
+                                segment_times = seg.get("segment")
+                                if segment_times and len(segment_times) >= 2:
+                                    start, end = float(segment_times[0]), float(segment_times[1])
+                                    # Segmen non-musik di awal video (start mendekati 0, misalnya <= 3.0 detik)
+                                    if start <= 3.0 and end > start:
+                                        return round(end, 1)
+        except Exception:
+            pass
+        return 0.0
+
     async def fetch_lyrics_data(self, song: Song | None = None, query: str | None = None) -> dict:
         import re
         import urllib.parse
@@ -1138,13 +1465,24 @@ class MusicManager(commands.Cog):
         headers = {'User-Agent': 'LinkrynMusicBot/2.0 (Mozilla/5.0)'}
         target_duration = float(song.duration) if song and song.duration else 0.0
         intro_chapter_delay = 0.0
+        video_id = None
         if song and song.data:
+            video_id = song.data.get('id')
             chapters = song.data.get('chapters') or []
             for ch in chapters:
                 ch_title = (ch.get('title') or '').lower()
                 if any(w in ch_title for w in ['intro', 'opening', 'scene', 'skit', 'dialog', 'prologue', 'awal', 'cutscene']):
                     intro_chapter_delay = float(ch.get('end_time') or 0.0)
                     break
+        if not video_id and song and song.url:
+            m = re.search(r'(?:v=|\/)([0-9A-Za-z_-]{11})', song.url)
+            if m:
+                video_id = m.group(1)
+
+        # Cek SponsorBlock untuk segmen non-musik di awal MV
+        sponsor_offset = 0.0
+        if video_id:
+            sponsor_offset = await self.fetch_sponsorblock_offset(video_id)
 
         all_lrc_items = []
         seen_ids = set()
@@ -1202,14 +1540,67 @@ class MusicManager(commands.Cog):
                 except Exception:
                     pass
 
+            # Expand the search beyond LRCLIB. LRCMux fans out across several public
+            # lyrics catalogs and returns the LRCLIB-compatible response shape.
+            async def fetch_lrcmux(artist: str, track: str) -> list[dict]:
+                # Retry transient failures and empty responses before moving to another
+                # title/artist variant. A short backoff avoids making the web panel wait
+                # through long serial timeouts.
+                for attempt in range(3):
+                    try:
+                        async with session.get(
+                            "https://api.lrcmux.dev/compat/lrclib/api/search",
+                            params={"artist_name": artist, "track_name": track},
+                            timeout=aiohttp.ClientTimeout(total=3),
+                        ) as resp:
+                            if resp.status == 200:
+                                payload = await resp.json()
+                                if isinstance(payload, list) and payload:
+                                    return [item for item in payload if isinstance(item, dict)]
+                            elif resp.status < 500 and resp.status != 429:
+                                return []
+                    except Exception:
+                        pass
+                    if attempt < 2:
+                        await asyncio.sleep(0.2 * (attempt + 1))
+                return []
+
+            if track_artist_pairs:
+                mux_results = await asyncio.gather(*(
+                    fetch_lrcmux(artist, track)
+                    for artist, track in track_artist_pairs[:4]
+                    if artist and track
+                ))
+                for result_group in mux_results:
+                    for item in result_group:
+                        identity = "_".join((
+                            str(item.get("artistName") or "").lower(),
+                            str(item.get("trackName") or "").lower(),
+                            str(item.get("duration") or ""),
+                        ))
+                        if identity not in seen_ids:
+                            seen_ids.add(identity)
+                            all_lrc_items.append(item)
+
             # Jika ada hasil dari LRCLIB, pilih yang paling sesuai dengan durasi video/lagu!
             if all_lrc_items:
                 def score_item(it):
                     synced = bool(it.get("syncedLyrics") and it.get("syncedLyrics").strip())
                     dur = float(it.get("duration") or 0.0)
                     dur_diff = abs(dur - target_duration) if (target_duration > 0 and dur > 0) else 999.0
-                    # Prioritaskan item yang memiliki syncedLyrics dan selisih durasi paling kecil ke video
-                    return (0 if synced else 1, dur_diff)
+                    candidate_title = clean_str(str(it.get("trackName") or "")).lower()
+                    target_title = clean_str(song.title if song else query or "").lower()
+                    title_match = bool(candidate_title and target_title and (
+                        candidate_title in target_title or target_title in candidate_title
+                    ))
+                    candidate_artist = clean_str(str(it.get("artistName") or "")).lower()
+                    target_artist = clean_str(song.uploader if song else "").lower()
+                    artist_match = bool(candidate_artist and target_artist and (
+                        candidate_artist in target_artist or target_artist in candidate_artist
+                    ))
+                    # Prefer synchronized lyrics for the same title and artist. Duration is
+                    # only a tie-breaker; its difference does not prove an intro exists.
+                    return (0 if synced else 1, 0 if title_match else 1, 0 if artist_match else 1, dur_diff)
 
                 all_lrc_items.sort(key=score_item)
                 best_item = all_lrc_items[0]
@@ -1218,13 +1609,15 @@ class MusicManager(commands.Cog):
                 plain = best_item.get("plainLyrics")
                 lrc_dur = float(best_item.get("duration") or 0.0)
 
-                # Deteksi jeda cutscene / intro:
+                # Deteksi jeda cutscene / intro non-musik:
                 suggested_offset = 0.0
-                if intro_chapter_delay > 0:
+                if sponsor_offset > 0:
+                    suggested_offset = sponsor_offset
+                elif intro_chapter_delay > 0:
                     suggested_offset = round(intro_chapter_delay, 1)
-                elif target_duration > 0 and lrc_dur > 0 and (target_duration - lrc_dur) >= 3.0:
-                    # Video lebih panjang dari track studio asli (misal MV ber-intro cutscene)
-                    suggested_offset = round(target_duration - lrc_dur, 1)
+
+                if song:
+                    song.intro_offset = suggested_offset
 
                 if synced and synced.strip():
                     return {
@@ -1234,19 +1627,22 @@ class MusicManager(commands.Cog):
                         "is_synced": True,
                         "lrc_duration": lrc_dur,
                         "video_duration": target_duration,
-                        "suggested_offset": suggested_offset
+                        "suggested_offset": suggested_offset,
+                        "intro_offset": suggested_offset
                     }
 
                 if plain and plain.strip():
                     # Jika hanya plain, buat lrc dengan memperhitungkan offset intro cutscene
                     lines = [l.strip() for l in plain.split("\n") if l.strip()]
                     if lines and target_duration > 0:
-                        start_time = suggested_offset if suggested_offset > 0 else 0.0
-                        effective_dur = max(20.0, target_duration - start_time)
+                        # Keep generated LRC timestamps relative to the song's musical start.
+                        # The dashboard applies suggested_offset against playback time; embedding
+                        # it here as well would shift the lyrics twice.
+                        effective_dur = max(20.0, target_duration - suggested_offset)
                         step = max(2.0, (effective_dur * 0.95) / len(lines))
                         lrc_lines = []
                         for i, l in enumerate(lines):
-                            t = start_time + (i * step)
+                            t = i * step
                             mins = int(t // 60)
                             secs = int(t % 60)
                             ms = int((t - int(t)) * 100)
@@ -1258,7 +1654,8 @@ class MusicManager(commands.Cog):
                             "is_synced": True,
                             "lrc_duration": lrc_dur,
                             "video_duration": target_duration,
-                            "suggested_offset": suggested_offset
+                            "suggested_offset": suggested_offset,
+                            "intro_offset": suggested_offset
                         }
 
             # Step 4: Fallback to lyrics.ovh
@@ -1273,7 +1670,9 @@ class MusicManager(commands.Cog):
                             data = await resp.json()
                             lyrics = data.get("lyrics")
                             if lyrics and lyrics.strip():
-                                start_time = intro_chapter_delay if intro_chapter_delay > 0 else 0.0
+                                start_time = sponsor_offset if sponsor_offset > 0 else (intro_chapter_delay if intro_chapter_delay > 0 else 0.0)
+                                if song:
+                                    song.intro_offset = start_time
                                 lines = [l.strip() for l in lyrics.split("\n") if l.strip()]
                                 lrc_str = None
                                 if lines and target_duration > 0:
@@ -1281,7 +1680,9 @@ class MusicManager(commands.Cog):
                                     step = max(2.0, (effective_dur * 0.95) / len(lines))
                                     lrc_lines = []
                                     for i, l in enumerate(lines):
-                                        t = start_time + (i * step)
+                                        # Offset is applied by the web player when comparing
+                                        # playback time to LRC time, so timestamps start at zero.
+                                        t = i * step
                                         mins = int(t // 60)
                                         secs = int(t % 60)
                                         ms = int((t - int(t)) * 100)
@@ -1294,16 +1695,20 @@ class MusicManager(commands.Cog):
                                     "is_synced": bool(lrc_str),
                                     "lrc_duration": None,
                                     "video_duration": target_duration,
-                                    "suggested_offset": start_time
+                                    "suggested_offset": start_time,
+                                    "intro_offset": start_time
                                 }
                 except Exception:
                     pass
 
+        final_fallback_offset = sponsor_offset if sponsor_offset > 0 else (intro_chapter_delay if intro_chapter_delay > 0 else 0.0)
         return {
             "title": search_candidates[0] if search_candidates else "",
             "plain_lyrics": None,
             "synced_lyrics": None,
-            "is_synced": False
+            "is_synced": False,
+            "suggested_offset": final_fallback_offset,
+            "intro_offset": final_fallback_offset
         }
 
     async def fetch_lyrics(self, query: str) -> tuple[str, str, str | None]:

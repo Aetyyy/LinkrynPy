@@ -136,53 +136,127 @@ export const PlayerBar: React.FC<PlayerBarProps> = ({
   const VolumeIcon = localVolume === 0 ? VolumeX : localVolume < 100 ? Volume1 : Volume2;
 
   return (
-    <footer className="h-[84px] bg-[#10192A] border-t border-slate-700/30 flex items-center justify-between px-7 z-25 relative shadow-2xl">
+    <footer
+      style={{
+        height: '84px',
+        backgroundColor: 'var(--bg-surface)',
+        borderTop: '1px solid var(--border-subtle)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: '0 28px',
+        zIndex: 25,
+        position: 'relative',
+        boxShadow: '0 -4px 20px rgba(0, 0, 0, 0.3)',
+      }}
+    >
       {/* LEFT: Current Track Metadata */}
-      <div className="flex items-center gap-3.5 w-[280px] min-w-0">
+      <div style={{ display: 'flex', alignItems: 'center', gap: '14px', width: '280px', minWidth: 0 }}>
         {currentSong ? (
           <>
-            <div className="relative w-12.5 h-12.5 shrink-0">
+            <div style={{ position: 'relative', width: '50px', height: '50px', flexShrink: 0 }}>
               <img
                 src={currentSong.thumbnail || 'https://via.placeholder.com/50'}
                 alt={currentSong.title}
-                className="w-full h-full rounded-lg object-cover shadow-sm"
+                style={{
+                  width: '100%',
+                  height: '100%',
+                  borderRadius: '8px',
+                  objectFit: 'cover',
+                  boxShadow: 'var(--shadow-sm)',
+                }}
               />
             </div>
-            <div className="min-w-0 flex-1">
-              <p className="text-[13.5px] font-semibold text-slate-100 truncate" title={currentSong.title}>
+            <div style={{ minWidth: 0, flex: 1 }}>
+              <p
+                style={{
+                  fontSize: '13.5px',
+                  fontWeight: '600',
+                  color: 'var(--text-primary)',
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  margin: 0,
+                }}
+                title={currentSong.title}
+              >
                 {currentSong.title}
               </p>
-              <p className="text-[11.5px] text-slate-400 truncate mt-0.5" title={currentSong.uploader || currentSong.artist || 'Artis'}>
+              <p
+                style={{
+                  fontSize: '11.5px',
+                  color: 'var(--text-secondary)',
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  marginTop: '2px',
+                }}
+                title={currentSong.uploader || currentSong.artist || 'Artis'}
+              >
                 {currentSong.uploader || currentSong.artist || 'Artis'}
               </p>
             </div>
-            <div className="flex items-center gap-1">
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
               <button
                 onClick={onToggleLikeCurrent}
                 title={isCurrentLiked ? 'Hapus dari Lagu yang Disukai' : 'Sukai Lagu'}
-                className="p-1.5 rounded-full hover:bg-slate-800 transition-colors"
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: isCurrentLiked ? 'var(--primary-blue)' : 'var(--text-muted)',
+                  cursor: 'pointer',
+                  padding: '6px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  borderRadius: '50%',
+                  transition: 'color 0.18s ease',
+                }}
               >
-                <Heart size={18} className={isCurrentLiked ? 'text-blue-500 fill-blue-500' : 'text-slate-400 hover:text-slate-200'} />
+                <Heart size={18} fill={isCurrentLiked ? 'var(--primary-blue)' : 'none'} />
               </button>
               <button
                 onClick={() => onOpenAddToPlaylist(currentSong)}
                 title="Tambah ke Playlist"
-                className="p-1.5 rounded-full text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-colors"
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: 'var(--text-muted)',
+                  cursor: 'pointer',
+                  padding: '6px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  borderRadius: '50%',
+                }}
+                onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--text-primary)')}
+                onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text-muted)')}
               >
                 <FolderPlus size={16} />
               </button>
             </div>
           </>
         ) : (
-          <div className="flex items-center gap-2.5">
-            <div className="w-11 h-11 rounded-lg bg-[#172234] flex items-center justify-center text-slate-500">
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <div
+              style={{
+                width: '44px',
+                height: '44px',
+                borderRadius: '8px',
+                backgroundColor: 'var(--bg-surface-secondary)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: 'var(--text-muted)',
+              }}
+            >
               <Music2 size={20} />
             </div>
             <div>
-              <p className="text-[13px] font-medium text-slate-300">
+              <p style={{ fontSize: '13px', fontWeight: '500', color: 'var(--text-secondary)' }}>
                 Tidak ada lagu aktif
               </p>
-              <p className="text-[11px] text-slate-500">
+              <p style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
                 Pilih dari rekomendasi atau cari
               </p>
             </div>
@@ -191,17 +265,40 @@ export const PlayerBar: React.FC<PlayerBarProps> = ({
       </div>
 
       {/* CENTER: Playback Controls & Progress Timeline */}
-      <div className="flex flex-col items-center gap-1.5 w-[45%] max-w-[560px]">
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          gap: '6px',
+          width: '45%',
+          maxWidth: '560px',
+        }}
+      >
         {/* Buttons Row: Shuffle, Previous, Play/Pause, Next, Loop, Autoplay, Stop */}
-        <div className="flex items-center gap-3.5">
+        <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
           {/* Shuffle Toggle */}
           <button
             onClick={onShuffle}
             title={isShuffle ? 'Acak Antrean: Aktif' : 'Acak Antrean: Nonaktif'}
-            disabled={!currentSong}
-            className={`p-1.5 rounded-md transition-colors ${
-              !currentSong ? 'opacity-40 cursor-not-allowed text-slate-500' : isShuffle ? 'text-blue-400 hover:text-blue-300' : 'text-slate-400 hover:text-slate-200'
-            }`}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: isShuffle ? 'var(--primary-blue)' : 'var(--text-muted)',
+              cursor: currentSong ? 'pointer' : 'not-allowed',
+              opacity: currentSong ? 1 : 0.4,
+              padding: '6px',
+              display: 'flex',
+              alignItems: 'center',
+              borderRadius: '6px',
+              transition: 'color 0.18s ease, transform 0.15s ease',
+            }}
+            onMouseEnter={(e) => {
+              if (currentSong) e.currentTarget.style.color = isShuffle ? 'var(--hover-blue)' : 'var(--text-primary)';
+            }}
+            onMouseLeave={(e) => {
+              if (currentSong) e.currentTarget.style.color = isShuffle ? 'var(--primary-blue)' : 'var(--text-muted)';
+            }}
           >
             <Shuffle size={16} />
           </button>
@@ -209,11 +306,25 @@ export const PlayerBar: React.FC<PlayerBarProps> = ({
           {/* Previous / Rewind */}
           <button
             onClick={onPrevious}
-            disabled={!currentSong}
             title="Putar Ulang / Sebelumnya"
-            className={`p-1.5 rounded-md transition-colors ${
-              !currentSong ? 'opacity-40 cursor-not-allowed text-slate-500' : 'text-slate-300 hover:text-slate-100'
-            }`}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: 'var(--text-secondary)',
+              cursor: currentSong ? 'pointer' : 'not-allowed',
+              opacity: currentSong ? 1 : 0.4,
+              padding: '6px',
+              display: 'flex',
+              alignItems: 'center',
+              borderRadius: '6px',
+              transition: 'color 0.18s ease',
+            }}
+            onMouseEnter={(e) => {
+              if (currentSong) e.currentTarget.style.color = 'var(--text-primary)';
+            }}
+            onMouseLeave={(e) => {
+              if (currentSong) e.currentTarget.style.color = 'var(--text-secondary)';
+            }}
           >
             <RotateCcw size={17} />
           </button>
@@ -223,27 +334,62 @@ export const PlayerBar: React.FC<PlayerBarProps> = ({
             onClick={onPlayPause}
             disabled={!currentSong}
             title={isPlaying ? 'Jeda' : 'Putar'}
-            className={`w-10 h-10 rounded-full flex items-center justify-center transition-all ${
-              currentSong
-                ? 'bg-blue-600 hover:bg-blue-500 text-white cursor-pointer shadow-lg shadow-blue-600/30 hover:scale-105'
-                : 'bg-slate-800 text-slate-500 cursor-not-allowed'
-            }`}
+            style={{
+              width: '40px',
+              height: '40px',
+              borderRadius: '50%',
+              backgroundColor: currentSong ? 'var(--primary-blue)' : 'var(--bg-surface-secondary)',
+              color: '#FFFFFF',
+              border: 'none',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: currentSong ? 'pointer' : 'not-allowed',
+              boxShadow: currentSong ? '0 4px 14px rgba(57, 120, 246, 0.4)' : 'none',
+              transition: 'transform 0.15s ease, background-color 0.15s ease',
+            }}
+            onMouseEnter={(e) => {
+              if (currentSong) {
+                e.currentTarget.style.backgroundColor = 'var(--hover-blue)';
+                e.currentTarget.style.transform = 'scale(1.05)';
+              }
+            }}
+            onMouseLeave={(e) => {
+              if (currentSong) {
+                e.currentTarget.style.backgroundColor = 'var(--primary-blue)';
+                e.currentTarget.style.transform = 'scale(1)';
+              }
+            }}
           >
             {isPlaying ? (
-              <Pause size={18} className="fill-white text-white" />
+              <Pause size={18} fill="#FFFFFF" />
             ) : (
-              <Play size={18} className="fill-white text-white ml-0.5" />
+              <Play size={18} fill="#FFFFFF" style={{ marginLeft: '2px' }} />
             )}
           </button>
 
           {/* Next Track */}
           <button
             onClick={onSkip}
-            disabled={!currentSong}
             title="Lewati Lagu (Next)"
-            className={`p-1.5 rounded-md transition-colors ${
-              !currentSong ? 'opacity-40 cursor-not-allowed text-slate-500' : 'text-slate-300 hover:text-slate-100'
-            }`}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: 'var(--text-secondary)',
+              cursor: currentSong ? 'pointer' : 'not-allowed',
+              opacity: currentSong ? 1 : 0.4,
+              padding: '6px',
+              display: 'flex',
+              alignItems: 'center',
+              borderRadius: '6px',
+              transition: 'color 0.18s ease',
+            }}
+            onMouseEnter={(e) => {
+              if (currentSong) e.currentTarget.style.color = 'var(--text-primary)';
+            }}
+            onMouseLeave={(e) => {
+              if (currentSong) e.currentTarget.style.color = 'var(--text-secondary)';
+            }}
           >
             <SkipForward size={18} />
           </button>
@@ -252,53 +398,139 @@ export const PlayerBar: React.FC<PlayerBarProps> = ({
           <button
             onClick={onLoop}
             title={`Mode Ulang: ${loopMode === 'track' ? 'Lagu Ini (Track)' : loopMode === 'queue' ? 'Seluruh Antrean (Queue)' : 'Mati (Off)'}`}
-            className={`p-1.5 rounded-md relative transition-colors ${
-              loopMode !== 'off' ? 'text-blue-400 hover:text-blue-300' : 'text-slate-400 hover:text-slate-200'
-            }`}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: loopMode !== 'off' ? 'var(--primary-blue)' : 'var(--text-muted)',
+              cursor: 'pointer',
+              padding: '6px',
+              display: 'flex',
+              alignItems: 'center',
+              position: 'relative',
+              borderRadius: '6px',
+              transition: 'color 0.18s ease',
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.color = loopMode !== 'off' ? 'var(--hover-blue)' : 'var(--text-primary)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.color = loopMode !== 'off' ? 'var(--primary-blue)' : 'var(--text-muted)';
+            }}
           >
             {loopMode === 'track' ? <Repeat1 size={17} /> : <Repeat size={17} />}
             {loopMode !== 'off' && (
-              <span className="absolute bottom-0.5 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-blue-500" />
+              <span
+                style={{
+                  position: 'absolute',
+                  bottom: '2px',
+                  width: '4px',
+                  height: '4px',
+                  borderRadius: '50%',
+                  backgroundColor: 'var(--primary-blue)',
+                  left: '50%',
+                  transform: 'translateX(-50%)',
+                }}
+              />
             )}
           </button>
 
           {/* Autoplay Toggle */}
           <button
             onClick={onToggleAutoplay}
-            title={autoplay ? 'Autoplay: Aktif' : 'Autoplay: Nonaktif'}
-            className={`p-1.5 rounded-md relative transition-colors ${
-              autoplay ? 'text-blue-400 hover:text-blue-300' : 'text-slate-400 hover:text-slate-200'
-            }`}
+            title={autoplay ? 'Autoplay: Aktif (Otomatis memutar rekomendasi jika antrean habis)' : 'Autoplay: Nonaktif'}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: autoplay ? 'var(--primary-blue)' : 'var(--text-muted)',
+              cursor: 'pointer',
+              padding: '6px',
+              display: 'flex',
+              alignItems: 'center',
+              position: 'relative',
+              borderRadius: '6px',
+              transition: 'color 0.18s ease',
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.color = autoplay ? 'var(--hover-blue)' : 'var(--text-primary)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.color = autoplay ? 'var(--primary-blue)' : 'var(--text-muted)';
+            }}
           >
             <Radio size={16} />
             {autoplay && (
-              <span className="absolute bottom-0.5 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-blue-500" />
+              <span
+                style={{
+                  position: 'absolute',
+                  bottom: '2px',
+                  width: '4px',
+                  height: '4px',
+                  borderRadius: '50%',
+                  backgroundColor: 'var(--primary-blue)',
+                  left: '50%',
+                  transform: 'translateX(-50%)',
+                }}
+              />
             )}
           </button>
 
           {/* Stop Button */}
           <button
             onClick={onStop}
-            disabled={!currentSong}
             title="Hentikan pemutaran bot & keluar voice"
-            className={`p-1.5 rounded-md transition-all ${
-              currentSong ? 'text-red-400 hover:text-red-300 hover:scale-105 cursor-pointer' : 'text-slate-600 cursor-not-allowed'
-            }`}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: currentSong ? 'var(--status-danger)' : 'var(--text-muted)',
+              cursor: currentSong ? 'pointer' : 'not-allowed',
+              opacity: currentSong ? 0.85 : 0.35,
+              padding: '6px',
+              display: 'flex',
+              alignItems: 'center',
+              borderRadius: '6px',
+              transition: 'all 0.18s ease',
+            }}
+            onMouseEnter={(e) => {
+              if (currentSong) {
+                e.currentTarget.style.opacity = '1';
+                e.currentTarget.style.transform = 'scale(1.08)';
+              }
+            }}
+            onMouseLeave={(e) => {
+              if (currentSong) {
+                e.currentTarget.style.opacity = '0.85';
+                e.currentTarget.style.transform = 'scale(1)';
+              }
+            }}
           >
-            <Square size={14} className="fill-current" />
+            <Square size={14} fill="currentColor" />
           </button>
         </div>
 
         {/* Progress Bar & Time */}
-        <div className="flex items-center gap-2.5 w-full">
-          <span className="text-[11px] text-slate-400 min-w-[32px] text-right font-medium">
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', width: '100%' }}>
+          <span style={{ fontSize: '11px', color: 'var(--text-muted)', minWidth: '32px', textAlign: 'right' }}>
             {formatTime(activeElapsed)}
           </span>
-          <div className="flex-1 relative h-1 bg-slate-700/40 rounded-full cursor-pointer">
+          <div
+            style={{
+              flex: 1,
+              position: 'relative',
+              height: '4px',
+              backgroundColor: 'rgba(148, 163, 184, 0.2)',
+              borderRadius: '999px',
+              cursor: currentSong ? 'pointer' : 'default',
+            }}
+          >
             <div
-              className="absolute left-0 top-0 h-full bg-blue-500 rounded-full transition-all"
               style={{
+                position: 'absolute',
+                left: 0,
+                top: 0,
+                height: '100%',
                 width: `${progressPercent}%`,
+                backgroundColor: 'var(--primary-blue)',
+                borderRadius: '999px',
                 transition: isDraggingSeek ? 'none' : 'width 0.15s linear',
               }}
             />
@@ -311,48 +543,81 @@ export const PlayerBar: React.FC<PlayerBarProps> = ({
               onChange={handleSeekInput}
               onMouseUp={handleSeekRelease}
               onTouchEnd={handleSeekRelease}
-              className="absolute -top-1.5 left-0 w-full h-4 opacity-0 cursor-pointer m-0"
+              style={{
+                position: 'absolute',
+                top: '-6px',
+                left: 0,
+                width: '100%',
+                height: '16px',
+                opacity: 0,
+                cursor: currentSong ? 'pointer' : 'default',
+                margin: 0,
+              }}
             />
           </div>
-          <span className="text-[11px] text-slate-400 min-w-[32px] font-medium">
+          <span style={{ fontSize: '11px', color: 'var(--text-muted)', minWidth: '32px' }}>
             {formatTime(duration)}
           </span>
         </div>
       </div>
 
       {/* RIGHT: Volume & Panel Shortcuts */}
-      <div className="flex items-center gap-3.5 w-[280px] justify-end">
+      <div style={{ display: 'flex', alignItems: 'center', gap: '14px', width: '280px', justifyContent: 'flex-end' }}>
+        
         {/* Lyrics Panel Toggle */}
         <button
           onClick={() => setRightPanel(prev => prev === 'lyrics' ? null : 'lyrics')}
           title="Lirik Lagu (Karaoke)"
-          className={`px-2 py-1.5 rounded-md flex items-center gap-1.5 text-xs font-semibold cursor-pointer transition-colors ${
-            rightPanel === 'lyrics'
-              ? 'bg-blue-500/15 border border-blue-500/30 text-blue-300'
-              : 'border border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-800'
-          }`}
+          style={{
+            background: rightPanel === 'lyrics' ? 'var(--active-blue-bg)' : 'none',
+            border: rightPanel === 'lyrics' ? '1px solid var(--active-blue-border)' : '1px solid transparent',
+            color: rightPanel === 'lyrics' ? 'var(--soft-blue)' : 'var(--text-secondary)',
+            cursor: 'pointer',
+            padding: '6px 8px',
+            borderRadius: '6px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '5px',
+            fontSize: '12px',
+            fontWeight: '600',
+            transition: 'all 0.15s ease',
+          }}
         >
-          <Mic2 size={16} className={rightPanel === 'lyrics' ? 'text-blue-400' : 'text-slate-400'} />
-          <span className="text-[11.5px]">Lirik</span>
+          <Mic2 size={16} color={rightPanel === 'lyrics' ? 'var(--primary-blue)' : 'currentColor'} />
+          <span style={{ fontSize: '11.5px' }}>Lirik</span>
         </button>
 
         {/* Queue Panel Toggle */}
         <button
           onClick={() => setRightPanel(prev => prev === 'queue' ? null : 'queue')}
           title="Daftar Antrean Lagu"
-          className={`px-2 py-1.5 rounded-md flex items-center gap-1.5 text-xs font-semibold cursor-pointer transition-colors ${
-            rightPanel === 'queue'
-              ? 'bg-blue-500/15 border border-blue-500/30 text-blue-300'
-              : 'border border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-800'
-          }`}
+          style={{
+            background: rightPanel === 'queue' ? 'var(--active-blue-bg)' : 'none',
+            border: rightPanel === 'queue' ? '1px solid var(--active-blue-border)' : '1px solid transparent',
+            color: rightPanel === 'queue' ? 'var(--soft-blue)' : 'var(--text-secondary)',
+            cursor: 'pointer',
+            padding: '6px 8px',
+            borderRadius: '6px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '5px',
+            fontSize: '12px',
+            fontWeight: '600',
+            transition: 'all 0.15s ease',
+          }}
         >
-          <ListMusic size={16} className={rightPanel === 'queue' ? 'text-blue-400' : 'text-slate-400'} />
-          <span className="text-[11.5px]">Antrean</span>
+          <ListMusic size={16} color={rightPanel === 'queue' ? 'var(--primary-blue)' : 'currentColor'} />
+          <span style={{ fontSize: '11.5px' }}>Antrean</span>
           {queueCount > 0 && (
             <span
-              className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
-                rightPanel === 'queue' ? 'bg-blue-500 text-white' : 'bg-slate-800 text-slate-300'
-              }`}
+              style={{
+                fontSize: '10px',
+                fontWeight: '700',
+                backgroundColor: rightPanel === 'queue' ? 'var(--primary-blue)' : 'var(--bg-surface-secondary)',
+                color: rightPanel === 'queue' ? '#FFFFFF' : 'var(--text-muted)',
+                padding: '1px 5px',
+                borderRadius: '8px',
+              }}
             >
               {queueCount}
             </span>
@@ -363,17 +628,37 @@ export const PlayerBar: React.FC<PlayerBarProps> = ({
         <button
           onClick={onToggleFilterModal}
           title="Audio Filter & Equalizer"
-          className="p-1.5 rounded-md text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-colors cursor-pointer"
+          style={{
+            background: 'none',
+            border: 'none',
+            color: 'var(--text-secondary)',
+            cursor: 'pointer',
+            padding: '6px',
+            borderRadius: '6px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+          onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--text-primary)')}
+          onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text-secondary)')}
         >
           <Sliders size={16} />
         </button>
 
         {/* Volume Slider Group (1 - 200%) */}
-        <div className="flex items-center gap-1.5">
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
           <button
             onClick={toggleMute}
             title={localVolume === 0 ? 'Batal Bisukan' : 'Bisukan Suara'}
-            className="p-1 text-slate-400 hover:text-slate-200 cursor-pointer"
+            style={{
+              background: 'none',
+              border: 'none',
+              color: localVolume === 0 ? 'var(--text-muted)' : 'var(--text-secondary)',
+              cursor: 'pointer',
+              padding: '4px',
+              display: 'flex',
+              alignItems: 'center',
+            }}
           >
             <VolumeIcon size={17} />
           </button>
@@ -385,12 +670,20 @@ export const PlayerBar: React.FC<PlayerBarProps> = ({
             onChange={handleVolumeInput}
             onMouseUp={handleVolumeRelease}
             onTouchEnd={handleVolumeRelease}
-            className="w-19 h-1 bg-slate-700/50 rounded-full cursor-pointer accent-blue-500"
+            style={{
+              width: '76px',
+              height: '4px',
+              cursor: 'pointer',
+            }}
           />
           <span
-            className={`text-[10.5px] font-semibold min-w-[32px] text-left ${
-              localVolume > 100 ? 'text-blue-400' : 'text-slate-400'
-            }`}
+            style={{
+              fontSize: '10.5px',
+              fontWeight: '600',
+              color: localVolume > 100 ? 'var(--soft-blue)' : 'var(--text-muted)',
+              minWidth: '32px',
+              textAlign: 'left',
+            }}
           >
             {localVolume}%
           </span>

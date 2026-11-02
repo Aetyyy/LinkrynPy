@@ -68,7 +68,7 @@ class PlayCommand(commands.Cog):
 
                 self.bot.loop.create_task(load_remaining_spotify())
 
-                if not voice_client.is_playing() and not voice_client.is_paused():
+                if not voice_client.is_playing() and not voice_client.is_paused() and not getattr(state, "is_loading", False):
                     manager.play_next(interaction.guild, interaction.channel)
                 return
 
@@ -126,7 +126,7 @@ class PlayCommand(commands.Cog):
             state.preferred_genre_keywords = kws
             state.prefetched_autoplay_song = None
 
-            if voice_client.is_playing() or voice_client.is_paused():
+            if voice_client.is_playing() or voice_client.is_paused() or getattr(state, "is_loading", False):
                 embed = discord.Embed(
                     title="📝 Ditambahkan ke Antrean",
                     description=f"[{song.title}]({song.url})",
@@ -138,7 +138,7 @@ class PlayCommand(commands.Cog):
                     embed.set_thumbnail(url=song.thumbnail)
                 return await interaction.followup.send(embed=embed)
 
-        if not voice_client.is_playing() and not voice_client.is_paused():
+        if not voice_client.is_playing() and not voice_client.is_paused() and not getattr(state, "is_loading", False):
             manager.play_next(interaction.guild, interaction.channel)
             await interaction.followup.send("🔍 Memuat dan memutar lagu...", ephemeral=True)
 

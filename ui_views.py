@@ -81,6 +81,16 @@ class MusicControlView(discord.ui.View):
 
         cog = self.get_cog()
         state = cog.get_guild_state(interaction.guild_id)
+
+        if getattr(state, "is_loading", False):
+            return await interaction.response.send_message("⏳ Lagu berikutnya sedang dimuat, mohon tunggu sebentar...", ephemeral=True)
+
+        import time
+        now = time.time()
+        if hasattr(state, "last_skip_time") and now - state.last_skip_time < 0.6:
+            return await interaction.response.send_message("⚠️ Permintaan skip sedang diproses...", ephemeral=True)
+        state.last_skip_time = now
+
         can_skip, reason = state.has_skip_permission(interaction.user, voice_client)
         if can_skip:
             voice_client.stop()
@@ -166,6 +176,8 @@ class MusicControlView(discord.ui.View):
             state.last_nowplaying_msg = None
         state.clear()
         state.current = None
+        if hasattr(cog, "set_voice_channel_status") and voice_client.channel:
+            await cog.set_voice_channel_status(voice_client.channel, "")
         voice_client.stop()
         await voice_client.disconnect()
         await interaction.response.send_message("⏹️ Musik dihentikan dan antrean dibersihkan.", ephemeral=True)

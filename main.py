@@ -10,16 +10,39 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Redam error internal WinError 10054 pada asyncio Proactor Windows saat koneksi WebSocket browser ditutup
+def silence_winerror_10054(loop, context):
+    exc = context.get("exception")
+    if isinstance(exc, (ConnectionResetError, BrokenPipeError)):
+        return
+    if isinstance(exc, OSError) and getattr(exc, "winerror", None) in (10054, 10053, 10038):
+        return
+    message = str(context.get("message", ""))
+    handle_str = str(context.get("handle", ""))
+    if "_call_connection_lost" in handle_str or "10054" in message:
+        return
+    loop.default_exception_handler(context)
+
 if sys.platform == "win32":
     try:
         from asyncio.proactor_events import _ProactorBasePipeTransport
+        import socket
         _orig_call_connection_lost = _ProactorBasePipeTransport._call_connection_lost
 
         def _silenced_call_connection_lost(self, exc):
             try:
                 _orig_call_connection_lost(self, exc)
             except (ConnectionResetError, OSError):
-                pass
+                try:
+                    if hasattr(self, "_sock") and self._sock is not None:
+                        self._sock.close()
+                        self._sock = None
+                    server = getattr(self, "_server", None)
+                    if server is not None:
+                        server._detach(self)
+                        self._server = None
+                    self._called_connection_lost = True
+                except Exception:
+                    pass
 
         _ProactorBasePipeTransport._call_connection_lost = _silenced_call_connection_lost
     except Exception:
@@ -38,6 +61,9 @@ class MusicBot(commands.Bot):
         super().__init__(command_prefix=PREFIX, intents=intents, help_command=None)
 
     async def setup_hook(self):
+        if sys.platform == "win32":
+            self.loop.set_exception_handler(silence_winerror_10054)
+
         # 1. Load MusicManager core engine
         await self.load_extension("music_manager")
         print("📦 Core Engine 'music_manager' berhasil dimuat.")

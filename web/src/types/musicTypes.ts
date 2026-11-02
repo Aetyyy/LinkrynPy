@@ -38,6 +38,10 @@ export interface CurrentTrack extends Track {
   elapsed_str?: string;
   requester?: string;
   intro_offset?: number;
+  track_position_ms?: number;
+  duration_ms?: number;
+  server_timestamp?: number;
+  official_duration?: number | null;
 }
 
 export interface QueueItem extends Track {
@@ -68,6 +72,8 @@ export interface UserVoicePresence {
 
 export interface PlayerStatus {
   connected: boolean;
+  server_timestamp?: number;
+  track_position_ms?: number;
   is_playing?: boolean;
   is_paused?: boolean;
   volume?: number;

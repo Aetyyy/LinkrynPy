@@ -1,3 +1,4 @@
+import time
 import discord
 from discord import app_commands
 from discord.ext import commands
@@ -21,6 +22,14 @@ class SkipCommand(commands.Cog):
 
         manager = self.get_manager()
         state = manager.get_guild_state(interaction.guild_id)
+
+        if getattr(state, "is_loading", False):
+            return await interaction.response.send_message("⏳ Lagu berikutnya sedang dimuat, mohon tunggu sebentar...", ephemeral=True)
+
+        now = time.time()
+        if hasattr(state, "last_skip_time") and now - state.last_skip_time < 0.6:
+            return await interaction.response.send_message("⚠️ Permintaan skip sedang diproses...", ephemeral=True)
+        state.last_skip_time = now
 
         can_skip, reason = state.has_skip_permission(interaction.user, vc)
         if can_skip:

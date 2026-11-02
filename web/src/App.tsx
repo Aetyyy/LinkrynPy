@@ -1,21 +1,23 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Sidebar } from './components/Sidebar';
-import { Header } from './components/Header';
-import { PlayerBar } from './components/PlayerBar';
-import { HeroBanner } from './components/HeroBanner';
-import { LikedSongsCarousel } from './components/LikedSongsCarousel';
-import { RecommendationsView } from './components/RecommendationsView';
-import { LikedSongsView } from './components/LikedSongsView';
-import { PlaylistsView } from './components/PlaylistsView';
-import { HistoryView } from './components/HistoryView';
-import { SearchView } from './components/SearchView';
-import { FilterEqualizerView } from './components/FilterEqualizerView';
-import { QueuePanel } from './components/QueuePanel';
-import { LyricsPanel } from './components/LyricsPanel';
-import { ContextMenu } from './components/ContextMenu';
-import { PlaylistModal } from './components/PlaylistModal';
-import { LoginModal } from './components/LoginModal';
-import { Toast } from './components/Toast';
+import { Sidebar } from './components/sidebar';
+import { Header } from './components/header';
+import { PlayerBar } from './components/playerBar';
+import { HeroBanner } from './components/heroBanner';
+import { LikedSongsCarousel } from './components/likedSongsCarousel';
+import { RecommendationsView } from './components/recommendationsView';
+import { LikedSongsView } from './components/likedSongsView';
+import { PlaylistsView } from './components/playlistsView';
+import { HistoryView } from './components/historyView';
+import { SearchView } from './components/searchView';
+import { FilterEqualizerView } from './components/filterEqualizerView';
+import { QueuePanel } from './components/queuePanel';
+import { LyricsPanel } from './components/lyricsPanel';
+import { ContextMenu } from './components/contextMenu';
+import { PlaylistModal } from './components/playlistModal';
+import { LoginModal } from './components/loginModal';
+import { Toast } from './components/toast';
+import { useAudioClock } from './hooks/useAudioClock';
+import { clearApiCache, fetchCached } from './services/apiCache';
 
 import { 
   ActiveTab, 
@@ -29,7 +31,9 @@ import {
   LyricsInfo,
   ToastMessage, 
   ContextMenuState,
-  AudioFilters
+  AudioFilters,
+  BassBoostLevel,
+  EqualizerPreset
 } from './types/music';
 import { parseLrc, parsePlainLyrics } from './utils/lrc';
 
@@ -98,6 +102,7 @@ export default function App() {
   const [loadingLyrics, setLoadingLyrics] = useState<boolean>(false);
   const [lyricsOffset, setLyricsOffset] = useState<number>(0);
   const lastFetchedSongRef = useRef<string>('');
+  const lyricsRequestIdRef = useRef(0);
   const lastTrackUrlRef = useRef<string>('');
   const wsRef = useRef<WebSocket | null>(null);
 
@@ -196,36 +201,6 @@ export default function App() {
     fetchGuilds();
   }, [currentUser]);
 
-  // Monotonic time synchronization to eliminate backward jumps ("maju mundur")
-  const syncElapsed = (serverElapsed: number, trackUrl?: string, isPaused?: boolean) => {
-    if (isSeeking) return;
-
-    if (trackUrl && trackUrl !== lastTrackUrlRef.current) {
-      lastTrackUrlRef.current = trackUrl;
-      setLocalElapsed(serverElapsed);
-      return;
-    }
-
-    if (isPaused) {
-      setLocalElapsed(serverElapsed);
-      return;
-    }
-
-    setLocalElapsed((currentLocal) => {
-      const diff = serverElapsed - currentLocal;
-      // Jika selisih besar (> 2.0 detik), pengguna melakukan seek atau skip di Discord
-      if (Math.abs(diff) > 2.0) {
-        return serverElapsed;
-      }
-      // Jika waktu lokal tertinggal dari server > 0.6s, sesuaikan maju ke server
-      if (diff > 0.6) {
-        return serverElapsed;
-      }
-      // Jika serverElapsed sedikit lebih kecil akibat latensi jaringan, JANGAN PERNAH MUNDUR
-      return currentLocal;
-    });
-  };
-
   // 4. WebSocket & Status Polling
   useEffect(() => {
     let ws: WebSocket | null = null;
@@ -248,8 +223,10 @@ export default function App() {
             if (msg.type === 'STATUS_UPDATE' && isMounted) {
               const data = msg.data;
               setStatus(data);
-              if (data?.current) {
-                syncElapsed(data.current.elapsed || 0, data.current.url, Boolean(data.is_paused));
+              if (data?.current?.url && data.current.url !== lastTrackUrlRef.current) {
+                lastTrackUrlRef.current = data.current.url;
+                setClockManualTime(0);
+                setLocalElapsed(0);
               }
             }
           } catch (e) {
@@ -274,8 +251,10 @@ export default function App() {
         .then((data) => {
           if (isMounted) {
             setStatus(data);
-            if (data?.current) {
-              syncElapsed(data.current.elapsed || 0, data.current.url, Boolean(data.is_paused));
+            if (data?.current?.url && data.current.url !== lastTrackUrlRef.current) {
+              lastTrackUrlRef.current = data.current.url;
+              setClockManualTime(0);
+              setLocalElapsed(0);
             }
           }
         })
@@ -287,25 +266,32 @@ export default function App() {
       if (ws) ws.close();
       if (fallbackInterval) clearInterval(fallbackInterval);
     };
-  }, [selectedGuild, userToken, isSeeking]);
+  }, [selectedGuild, userToken]);
 
-  // 5. Playing Progress Tick (High-Resolution 200ms monotonic clock)
+  // 5. Smooth 60FPS Lyrics & Playback Audio Clock (with 200ms Discord Voice Latency Compensation)
+  const trackPositionMs = status?.track_position_ms !== undefined
+    ? status.track_position_ms
+    : (status?.current?.track_position_ms !== undefined
+      ? status.current.track_position_ms
+      : (status?.current?.elapsed !== undefined ? status.current.elapsed * 1000 : undefined));
+
+  const { currentTime: clockTime, setManualTime: setClockManualTime } = useAudioClock({
+    serverTimestamp: status?.server_timestamp || status?.current?.server_timestamp,
+    trackPositionMs,
+    isPlaying: Boolean(status?.is_playing),
+    isPaused: Boolean(status?.is_paused),
+    duration: status?.current?.duration || 0,
+    latencyCompensationMs: 200,
+    isSeeking,
+    seekingTime: localElapsed,
+  });
+
+  // Keep localElapsed smoothly in sync with high-precision 60fps clock
   useEffect(() => {
-    if (!status?.is_playing || status?.is_paused || isSeeking) return;
-    let lastTime = performance.now();
-    const timer = setInterval(() => {
-      const now = performance.now();
-      const deltaSec = (now - lastTime) / 1000;
-      lastTime = now;
-      setLocalElapsed((prev) => {
-        const dur = status?.current?.duration || 0;
-        const nextVal = prev + deltaSec;
-        if (dur > 0 && nextVal >= dur) return dur;
-        return nextVal;
-      });
-    }, 200);
-    return () => clearInterval(timer);
-  }, [status?.is_playing, status?.is_paused, isSeeking, status?.current?.duration]);
+    if (!isSeeking) {
+      setLocalElapsed(clockTime);
+    }
+  }, [clockTime, isSeeking]);
 
   // 6. Generic API Call Handler
   const apiCall = async (endpoint: string, body: Record<string, unknown> = {}): Promise<boolean> => {
@@ -324,9 +310,15 @@ export default function App() {
         }
         return false;
       }
+      if (endpoint === 'play' || endpoint.includes('/play') || endpoint === 'skip') {
+        clearApiCache();
+      }
       if (endpoint === 'skip') {
         showToast(`⏭️ Lagu dilewati! (${data.reason || 'Sukses'})`);
       }
+      // Filter state is broadcast by the backend; avoid a redundant status fetch
+      // so controls respond immediately while FFmpeg refreshes the audio stream.
+      if (endpoint === 'filter') return true;
       // Quick refresh
       const url = selectedGuild ? `${API_BASE}/api/status?guild_id=${selectedGuild}` : `${API_BASE}/api/status`;
       const sRes = await fetch(url, { headers: getHeaders() });
@@ -350,7 +342,7 @@ export default function App() {
     }
     const timeout = setTimeout(async () => {
       try {
-        const res = await fetch(`${API_BASE}/api/search?q=${encodeURIComponent(trimmed)}&limit=6`, { headers: getHeaders() });
+        const res = await fetchCached(`${API_BASE}/api/search?q=${encodeURIComponent(trimmed)}&limit=6`, { headers: getHeaders() }, 30_000);
         const data = await res.json();
         setSearchSuggestions(data.results || []);
         setShowSearchDropdown(true);
@@ -378,7 +370,7 @@ export default function App() {
     setActiveTab('search');
     setLoadingSearch(true);
     try {
-      const res = await fetch(`${API_BASE}/api/search?q=${encodeURIComponent(q)}&limit=16`, { headers: getHeaders() });
+      const res = await fetchCached(`${API_BASE}/api/search?q=${encodeURIComponent(q)}&limit=16`, { headers: getHeaders() }, 60_000);
       const data = await res.json();
       setSearchResults(data.results || []);
     } catch (err) {
@@ -397,7 +389,7 @@ export default function App() {
 
   const loadLikedSongs = async () => {
     try {
-      const res = await fetch(`${API_BASE}/api/likes`, { headers: getHeaders() });
+      const res = await fetchCached(`${API_BASE}/api/likes`, { headers: getHeaders() }, 30_000);
       const data = await res.json();
       setLikedSongs(data.liked_songs || []);
     } catch (e) {
@@ -413,6 +405,7 @@ export default function App() {
         method: 'DELETE',
         headers: getHeaders(),
       });
+      clearApiCache();
       setLikedSongs((prev) => prev.filter((s) => s.url !== song.url));
       showToast('Dihapus dari Lagu yang Disukai.');
       if (status?.current?.url === song.url) {
@@ -432,6 +425,7 @@ export default function App() {
         headers: getHeaders(),
         body: JSON.stringify({ song: songPayload }),
       });
+      clearApiCache();
       showToast('💙 Ditambahkan ke Lagu yang Disukai!');
       loadLikedSongs();
       if (status?.current?.url === song.url) {
@@ -458,6 +452,7 @@ export default function App() {
         method: 'DELETE',
         headers: getHeaders(),
       });
+      clearApiCache();
       setLikedSongs((prev) => prev.filter((s) => s.url !== url));
       if (status?.current?.url === url) {
         setStatus((prev) => (prev ? { ...prev, current: prev.current ? { ...prev.current, is_liked: false } : null } : null));
@@ -471,7 +466,7 @@ export default function App() {
   // 9. Playlists Management
   const loadPlaylists = async () => {
     try {
-      const res = await fetch(`${API_BASE}/api/playlists`, { headers: getHeaders() });
+      const res = await fetchCached(`${API_BASE}/api/playlists`, { headers: getHeaders() }, 30_000);
       const data = await res.json();
       setPlaylists(data.playlists || []);
     } catch (e) {
@@ -487,6 +482,7 @@ export default function App() {
         headers: getHeaders(),
         body: JSON.stringify({ name: name.trim() }),
       });
+      clearApiCache();
       loadPlaylists();
       setPlaylistModalSong(null);
       setIsCreatePlaylistOnly(false);
@@ -503,6 +499,7 @@ export default function App() {
         method: 'DELETE',
         headers: getHeaders(),
       });
+      clearApiCache();
       if (selectedPlaylist?.id === id) setSelectedPlaylist(null);
       loadPlaylists();
       showToast('Playlist dihapus.');
@@ -514,7 +511,7 @@ export default function App() {
   const viewPlaylistSongs = async (pl: Playlist) => {
     setSelectedPlaylist(pl);
     try {
-      const res = await fetch(`${API_BASE}/api/playlists/${pl.id}/songs`, { headers: getHeaders() });
+      const res = await fetchCached(`${API_BASE}/api/playlists/${pl.id}/songs`, { headers: getHeaders() }, 30_000);
       const data = await res.json();
       setPlaylistSongs(data.songs || []);
     } catch (e) {
@@ -529,6 +526,7 @@ export default function App() {
         headers: getHeaders(),
       });
       if (res.ok) {
+        clearApiCache();
         showToast('Lagu dihapus dari playlist.');
         if (selectedPlaylist) viewPlaylistSongs(selectedPlaylist);
         loadPlaylists();
@@ -556,6 +554,7 @@ export default function App() {
       });
       const data = await res.json();
       if (res.ok) {
+        clearApiCache();
         showToast('Lagu berhasil ditambahkan ke playlist!');
         setPlaylistModalSong(null);
         loadPlaylists();
@@ -579,6 +578,7 @@ export default function App() {
       });
       const data = await res.json();
       if (res.ok && data.playlist_id) {
+        clearApiCache();
         await addSongToPlaylist(data.playlist_id, song);
       } else {
         showToast(data.error || 'Gagal membuat playlist', true);
@@ -589,8 +589,13 @@ export default function App() {
   };
 
   const playPlaylist = async (playlistId: string) => {
-    apiCall(`playlists/${playlistId}/play`);
-    showToast('Memulai pemutaran playlist...');
+    const queued = await apiCall(`playlists/${playlistId}/play`);
+    if (queued) showToast('Semua lagu playlist ditambahkan ke antrean.');
+  };
+
+  const playAllLikedSongs = async () => {
+    const queued = await apiCall('likes/play');
+    if (queued) showToast('Semua lagu yang disukai ditambahkan ke antrean.');
   };
 
   // 10. Recommendations & History
@@ -598,7 +603,7 @@ export default function App() {
     setLoadingRecs(true);
     try {
       const gParam = genre && genre !== 'Semua' ? `&genre=${encodeURIComponent(genre)}` : '';
-      const res = await fetch(`${API_BASE}/api/recommendations?guild_id=${selectedGuild}${gParam}`, { headers: getHeaders() });
+      const res = await fetchCached(`${API_BASE}/api/recommendations?guild_id=${selectedGuild}${gParam}`, { headers: getHeaders() }, 5 * 60_000);
       const data = await res.json();
       setRecommendations(data.recommendations || []);
     } catch (e) {
@@ -610,7 +615,7 @@ export default function App() {
 
   const loadHistory = async () => {
     try {
-      const res = await fetch(`${API_BASE}/api/history?guild_id=${selectedGuild}`, { headers: getHeaders() });
+      const res = await fetchCached(`${API_BASE}/api/history?guild_id=${selectedGuild}`, { headers: getHeaders() }, 15_000);
       const data = await res.json();
       setHistoryList(data.history || []);
     } catch (e) {
@@ -620,6 +625,7 @@ export default function App() {
 
   // 11. Lyrics Synchronization
   const loadLyrics = async (customQuery: string | null = null) => {
+    const requestId = ++lyricsRequestIdRef.current;
     setLoadingLyrics(true);
     try {
       const res = await fetch(`${API_BASE}/api/lyrics`, {
@@ -628,22 +634,38 @@ export default function App() {
         body: JSON.stringify({ guild_id: selectedGuild, query: customQuery || null }),
       });
       const data = await res.json();
-      setLyricsData(data);
+      if (requestId === lyricsRequestIdRef.current) {
+        setLyricsData(data);
+      }
     } catch (err) {
       console.error(err);
     } finally {
-      setLoadingLyrics(false);
+      if (requestId === lyricsRequestIdRef.current) {
+        setLoadingLyrics(false);
+      }
     }
   };
 
   // Auto fetch lyrics when playing song changes
   useEffect(() => {
+    const currUrl = status?.current?.url;
     const currTitle = status?.current?.title;
-    if (currTitle && currTitle !== lastFetchedSongRef.current) {
-      lastFetchedSongRef.current = currTitle;
-      loadLyrics(currTitle);
+    if (!currUrl) {
+      lastFetchedSongRef.current = '';
+      lyricsRequestIdRef.current += 1;
+      setLyricsData(null);
+      setLoadingLyrics(false);
+      setLyricsOffset(0);
+      return;
     }
-  }, [status?.current?.title]);
+    if (currUrl !== lastFetchedSongRef.current) {
+      lastFetchedSongRef.current = currUrl;
+      setLyricsData(null);
+      // Let the backend use the active Song object (duration, uploader, chapters,
+      // and video ID) instead of treating the title as a manual search query.
+      loadLyrics();
+    }
+  }, [status?.current?.url, status?.current?.title]);
 
   // Initial Loaders
   useEffect(() => {
@@ -659,34 +681,22 @@ export default function App() {
     if (activeTab === 'history') loadHistory();
   }, [activeTab]);
 
-  // Auto load / set offset whenever current song changes or suggested offset arrives
+  // Apply a fresh offset from track metadata or lyric detection; never reuse a
+  // previous manual adjustment for a different synchronization source.
   useEffect(() => {
     const currUrl = status?.current?.url;
     if (!currUrl) {
       setLyricsOffset(0);
       return;
     }
-    const saved = localStorage.getItem(`linkryn_offset_${currUrl}`);
-    if (saved !== null) {
-      setLyricsOffset(parseFloat(saved) || 0);
-    } else if (lyricsData?.suggested_offset && lyricsData.suggested_offset >= 2.5) {
-      setLyricsOffset(lyricsData.suggested_offset);
-    } else {
-      setLyricsOffset(0);
-    }
-  }, [status?.current?.url, lyricsData?.suggested_offset]);
-
-  const handleLyricsOffsetChange = (newOffset: number) => {
-    setLyricsOffset(newOffset);
-    const currUrl = status?.current?.url;
-    if (currUrl) {
-      localStorage.setItem(`linkryn_offset_${currUrl}`, newOffset.toString());
-    }
-  };
+    const detectedOffset = lyricsData?.intro_offset ?? status?.current?.intro_offset ?? lyricsData?.suggested_offset ?? 0;
+    setLyricsOffset(Number.isFinite(detectedOffset) ? Math.max(-30, Math.min(30, detectedOffset)) : 0);
+  }, [status?.current?.url, status?.current?.intro_offset, lyricsData?.intro_offset, lyricsData?.suggested_offset]);
 
   // Parse lyrics
   const lyricsInfo = useMemo<LyricsInfo>(() => {
     if (!lyricsData) return { isSynced: false, lines: [] };
+    const introOff = lyricsData.intro_offset ?? status?.current?.intro_offset;
     if (lyricsData.synced_lyrics) {
       const parsed = parseLrc(lyricsData.synced_lyrics);
       if (parsed.length > 0) {
@@ -694,6 +704,7 @@ export default function App() {
           isSynced: true,
           lines: parsed,
           suggestedOffset: lyricsData.suggested_offset,
+          introOffset: introOff,
           lrcDuration: lyricsData.lrc_duration,
           videoDuration: lyricsData.video_duration || status?.current?.duration,
         };
@@ -705,12 +716,13 @@ export default function App() {
         isSynced: false,
         lines: plain,
         suggestedOffset: lyricsData.suggested_offset,
+        introOffset: introOff,
         lrcDuration: lyricsData.lrc_duration,
         videoDuration: lyricsData.video_duration || status?.current?.duration,
       };
     }
     return { isSynced: false, lines: [] };
-  }, [lyricsData, status?.current?.duration]);
+  }, [lyricsData, status?.current?.duration, status?.current?.intro_offset]);
 
   const activeLineIndex = useMemo(() => {
     if (!lyricsInfo.isSynced || !lyricsInfo.lines.length) return -1;
@@ -769,6 +781,7 @@ export default function App() {
 
   const handlePrevious = () => {
     apiCall('seek', { seconds: 0 });
+    setClockManualTime(0);
     setLocalElapsed(0);
   };
 
@@ -799,10 +812,14 @@ export default function App() {
     }
   }, [status?.user_voice?.guild_id, status?.guild?.id, selectedGuild]);
 
-  const handleSeekCommit = (seconds: number) => {
-    setIsSeeking(false);
+  const handleSeekCommit = async (seconds: number) => {
     setLocalElapsed(seconds);
-    apiCall('seek', { seconds });
+    const succeeded = await apiCall('seek', { seconds });
+    if (succeeded) {
+      setClockManualTime(seconds);
+      setLocalElapsed(seconds);
+    }
+    setIsSeeking(false);
   };
 
   const handlePlayTrack = (track: Track) => {
@@ -818,11 +835,54 @@ export default function App() {
   };
 
   const handleApplyFilter = (key: string, value: unknown) => {
-    apiCall('filter', { filter: key, value });
+    setStatus((previous) => {
+      if (!previous) return previous;
+      const filters: AudioFilters = {
+        bass_boost: previous.filters?.bass_boost ?? 'off',
+        equalizer: previous.filters?.equalizer ?? 'off',
+        custom_eq: previous.filters?.custom_eq ?? Array(10).fill(0),
+        nightcore: previous.filters?.nightcore ?? false,
+        vaporwave: previous.filters?.vaporwave ?? false,
+        speed: previous.filters?.speed ?? 1,
+        treble: previous.filters?.treble ?? 0,
+        karaoke: previous.filters?.karaoke ?? false,
+      };
+      if (key === 'custom_eq' && Array.isArray(value)) {
+        const values = value.filter((band): band is number => typeof band === 'number' && Number.isFinite(band));
+        if (values.length === 5 || values.length === 10) {
+          const expanded = values.length === 5
+            ? values.flatMap((band) => [band, band])
+            : values;
+          filters.custom_eq = expanded.map((band) => Math.max(-12, Math.min(12, Math.round(band))));
+          filters.equalizer = 'custom';
+        }
+      } else if (key === 'bass_boost' && ['off', 'soft', 'medium', 'hard'].includes(String(value))) {
+        filters.bass_boost = value as BassBoostLevel;
+      } else if (key === 'equalizer' && ['off', 'pop', 'rock', 'classical', 'jazz', 'electronic', 'vocal', 'custom'].includes(String(value))) {
+        filters.equalizer = value as EqualizerPreset;
+      } else if (key === 'speed' && typeof value === 'number') {
+        filters.speed = value;
+      } else if (key === 'treble' && typeof value === 'number') {
+        filters.treble = value;
+      } else if (['nightcore', 'vaporwave', 'karaoke'].includes(key) && typeof value === 'boolean') {
+        filters[key as 'nightcore' | 'vaporwave' | 'karaoke'] = value;
+        if (key === 'nightcore' && value) filters.vaporwave = false;
+        if (key === 'vaporwave' && value) filters.nightcore = false;
+      }
+      return { ...previous, filters };
+    });
+    void apiCall('filter', { filter: key, value });
   };
 
   const handleResetFilters = () => {
-    apiCall('filter', { filter: 'reset' });
+    setStatus((previous) => previous ? {
+      ...previous,
+      filters: {
+        bass_boost: 'off', equalizer: 'off', custom_eq: Array(10).fill(0),
+        nightcore: false, vaporwave: false, speed: 1, treble: 0, karaoke: false,
+      },
+    } : previous);
+    void apiCall('filter', { filter: 'reset' });
     showToast('Seluruh filter audio di-reset ke normal.');
   };
 
@@ -948,6 +1008,7 @@ export default function App() {
               <LikedSongsView
                 likedSongs={likedSongs}
                 onPlaySong={handlePlayTrack}
+                onPlayAll={playAllLikedSongs}
                 onRemoveLiked={removeLikedSong}
                 onContextMenu={handleContextMenu}
                 onOpenAddToPlaylist={(track) => {
@@ -1041,8 +1102,6 @@ export default function App() {
             loading={loadingLyrics}
             onClose={() => setRightPanel(null)}
             onSearchLyrics={(q) => loadLyrics(q)}
-            lyricsOffset={lyricsOffset}
-            onLyricsOffsetChange={handleLyricsOffsetChange}
           />
         )}
 

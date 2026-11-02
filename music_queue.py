@@ -3,6 +3,7 @@ import random
 import asyncio
 from collections import deque
 import discord
+from audio_filter_utils import EQ_BAND_COUNT
 
 class Song:
     def __init__(self, data: dict, requester: discord.Member):
@@ -27,6 +28,9 @@ class Song:
         self.pause_start: float | None = None
         self.total_paused_duration: float = 0.0
         self.is_autoplay: bool = False
+        self.intro_offset: float = float(data.get('intro_offset') or 0.0)
+        self.official_duration: float | None = data.get('official_duration')
+        self.official_metadata: dict | None = data.get('official_metadata')
 
     def pause(self):
         if not self.pause_start:
@@ -73,7 +77,7 @@ class MusicQueue:
         self.speed: float = 1.0
         self.nightcore: bool = False
         self.equalizer: str = "off"   # "off", "pop", "rock", "classical", "jazz", "electronic", "vocal", "custom"
-        self.custom_eq: list[int] = [0, 0, 0, 0, 0]  # [60Hz, 230Hz, 910Hz, 3600Hz, 14000Hz] in dB
+        self.custom_eq: list[int] = [0] * EQ_BAND_COUNT
         self.vaporwave: bool = False
         self.treble: int = 0          # -10 sampai 10 dB
         self.karaoke: bool = False
@@ -82,11 +86,14 @@ class MusicQueue:
         self.autoplay: bool = True           # Default ON
         self.last_nowplaying_msg: discord.Message | None = None
         self.played_titles: set[str] = set() # Mencegah rekomendasi lagu yang sama berulang
+        self.recent_autoplay_artists: list[str] = [] # Melacak artis terakhir agar autoplay tidak mengulang penyanyi yang sama
         self.preferred_genre_keywords: list[str] = [] # Mengunci kata kunci pencarian rekomendasi
         self.preferred_genre_category: str = "general" # Kategori genre terkunci (akustik_indo, jawa_koplo, dll.)
         self.prefetched_autoplay_song: Song | None = None # Pre-fetch lagu autoplay agar instan tanpa mikir lama
         
         self.is_restarting: bool = False  # Flag mencegah after_playback memajukan antrean saat restart stream
+        self.is_loading: bool = False     # Flag penanda bot sedang memuat audio lagu baru (mencegah double pop / race condition)
+        self.last_skip_time: float = 0.0  # Timestamp skip terakhir untuk debounce anti-spam skip
         self.auto_leave_task = None
         self.votes: set[int] = set()
         self.play_lock = asyncio.Lock()   # Kunci serialisasi playback untuk mencegah Already playing audio
@@ -212,6 +219,10 @@ class MusicQueue:
         self.prefetched_autoplay_song = None
         self.preferred_genre_keywords = []
         self.preferred_genre_category = "general"
+        self.recent_autoplay_artists.clear()
+        self.is_loading = False
+        self.is_restarting = False
+        self.last_skip_time = 0.0
 
     def remove(self, index: int) -> Song | None:
         if 0 <= index < len(self.queue):

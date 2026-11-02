@@ -9,7 +9,7 @@ import {
   Headphones,
   AlertCircle
 } from 'lucide-react';
-import type { ActiveTab, PlayerStatus, User } from '../types/musicTypes';
+import { ActiveTab, PlayerStatus, User } from '../types/music';
 
 interface SidebarProps {
   activeTab: ActiveTab;
@@ -40,57 +40,141 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const isUserInVoice = Boolean(userVoiceChannel);
 
   return (
-    <aside className="w-65 bg-[#0A101C] border-r border-slate-700/20 flex flex-col p-6 pt-6 pb-5 shrink-0 z-20">
+    <aside
+      style={{
+        width: '260px',
+        backgroundColor: 'var(--bg-sidebar)',
+        borderRight: '1px solid var(--border-subtle)',
+        display: 'flex',
+        flexDirection: 'column',
+        padding: '24px 16px 20px 16px',
+        flexShrink: 0,
+        zIndex: 20,
+      }}
+    >
       {/* Brand & Emblem */}
-      <div className="flex items-center gap-3 px-2 mb-5.5">
-        <div className="w-9.5 h-9.5 rounded-xl bg-[#2563EB] flex items-center justify-center shadow-[0_4px_14px_rgba(37,99,235,0.35)] shrink-0">
-          <Disc3 size={22} className="text-white animate-spin-slow" />
+      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '0 8px', marginBottom: '22px' }}>
+        <div
+          style={{
+            width: '38px',
+            height: '38px',
+            borderRadius: '10px',
+            backgroundColor: 'var(--primary-blue)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            boxShadow: '0 4px 14px rgba(57, 120, 246, 0.35)',
+          }}
+        >
+          <Disc3 size={22} color="#FFFFFF" className="animate-spin-slow" />
         </div>
         <div>
-          <h1 className="text-[17px] font-bold tracking-tight text-slate-100 m-0">
+          <h1 style={{ fontSize: '17px', fontWeight: '700', letterSpacing: '-0.3px', color: 'var(--text-primary)' }}>
             Linkryn
           </h1>
-          <p className="text-[11px] text-slate-400 font-medium m-0">
+          <p style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: '500' }}>
             Discord Music Player
           </p>
         </div>
       </div>
 
-      {/* Auto-detected Discord Server & Voice Channel Card */}
-      <div className="p-3.5 bg-[#111B2D] rounded-xl border border-slate-700/30 mb-5 flex flex-col gap-1.5 shadow-sm">
-        <div className="flex items-center gap-2">
+      {/* Auto-detected Discord Server & Voice Channel Card (No manual selector) */}
+      <div
+        style={{
+          padding: '12px 14px',
+          backgroundColor: 'var(--bg-surface)',
+          borderRadius: '10px',
+          border: '1px solid var(--border-subtle)',
+          marginBottom: '20px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '6px',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <span
-            className={`w-2 h-2 rounded-full shrink-0 ${
-              isUserInVoice ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.7)]' : 'bg-[#3978F6] shadow-[0_0_8px_rgba(57,120,246,0.5)]'
-            }`}
+            style={{
+              width: '8px',
+              height: '8px',
+              borderRadius: '50%',
+              backgroundColor: isUserInVoice ? 'var(--status-success)' : 'var(--primary-blue)',
+              boxShadow: isUserInVoice ? '0 0 8px rgba(16, 185, 129, 0.7)' : '0 0 8px rgba(57, 120, 246, 0.5)',
+              flexShrink: 0,
+            }}
           />
-          <p className="text-[13px] font-bold text-slate-100 truncate m-0" title={serverName}>
+          <p
+            style={{
+              fontSize: '13px',
+              fontWeight: '700',
+              color: 'var(--text-primary)',
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              margin: 0,
+            }}
+            title={serverName}
+          >
             {serverName}
           </p>
         </div>
 
         {/* Live Voice Channel Status */}
         {userVoiceChannel ? (
-          <div className="flex items-center gap-1.5 bg-[#3978F6]/15 border border-[#3978F6]/30 rounded-md py-1 px-2 text-[11.5px] text-[#8BB4FF] font-semibold truncate">
-            <Headphones size={13} className="text-[#3978F6] shrink-0" />
-            <span className="truncate">#{userVoiceChannel}</span>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              backgroundColor: 'var(--active-blue-bg)',
+              border: '1px solid var(--active-blue-border)',
+              borderRadius: '6px',
+              padding: '4px 8px',
+              fontSize: '11.5px',
+              color: 'var(--soft-blue)',
+              fontWeight: '600',
+            }}
+          >
+            <Headphones size={13} color="var(--primary-blue)" />
+            <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              #{userVoiceChannel}
+            </span>
           </div>
         ) : botVoiceChannel ? (
-          <div className="flex items-center gap-1.5 bg-[#17243A] rounded-md py-1 px-2 text-[11.5px] text-slate-300 truncate">
-            <Headphones size={13} className="text-slate-400 shrink-0" />
-            <span className="truncate">Bot: #{botVoiceChannel}</span>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              backgroundColor: 'var(--bg-surface-secondary)',
+              borderRadius: '6px',
+              padding: '4px 8px',
+              fontSize: '11.5px',
+              color: 'var(--text-secondary)',
+            }}
+          >
+            <Headphones size={13} color="var(--text-muted)" />
+            <span>Bot: #{botVoiceChannel}</span>
           </div>
         ) : (
-          <div className="flex items-center gap-1.5 py-0.5 text-[11px] text-amber-400 font-medium">
-            <AlertCircle size={12} className="shrink-0" />
-            <span className="truncate">Belum masuk Voice Channel</span>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '2px 0',
+              fontSize: '11px',
+              color: 'var(--status-warning)',
+            }}
+          >
+            <AlertCircle size={12} />
+            <span>Belum masuk Voice Channel</span>
           </div>
         )}
       </div>
 
       {/* Navigation List */}
-      <nav className="flex flex-col gap-1 flex-1 overflow-y-auto">
-        <p className="text-[10px] text-slate-400 uppercase font-bold px-2.5 pb-1.5 tracking-wider">
+      <nav style={{ display: 'flex', flexDirection: 'column', gap: '4px', flex: 1, overflowY: 'auto' }}>
+        <p style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: '700', padding: '0 10px 6px 10px', letterSpacing: '0.6px' }}>
           Menu Utama
         </p>
         {navItems.map((item) => {
@@ -99,21 +183,48 @@ export const Sidebar: React.FC<SidebarProps> = ({
           return (
             <button
               key={item.id}
-              type="button"
               onClick={() => setActiveTab(item.id)}
-              className={`flex items-center gap-3 py-2.5 px-3 rounded-xl text-[13.5px] cursor-pointer text-left transition-colors border-none relative ${
-                isActive
-                  ? 'bg-[#3978F6]/15 text-[#8BB4FF] font-semibold'
-                  : 'text-slate-300 font-medium hover:bg-[#1E2D47] hover:text-slate-100'
-              }`}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '12px',
+                padding: '10px 12px',
+                borderRadius: '8px',
+                border: 'none',
+                backgroundColor: isActive ? 'var(--active-blue-bg)' : 'transparent',
+                color: isActive ? 'var(--soft-blue)' : 'var(--text-secondary)',
+                fontWeight: isActive ? '600' : '500',
+                fontSize: '13.5px',
+                cursor: 'pointer',
+                textAlign: 'left',
+                transition: 'all 0.18s ease',
+                position: 'relative',
+              }}
+              onMouseEnter={(e) => {
+                if (!isActive) {
+                  e.currentTarget.style.backgroundColor = 'var(--bg-surface-hover)';
+                  e.currentTarget.style.color = 'var(--text-primary)';
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (!isActive) {
+                  e.currentTarget.style.backgroundColor = 'transparent';
+                  e.currentTarget.style.color = 'var(--text-secondary)';
+                }
+              }}
             >
-              <Icon size={18} className={isActive ? 'text-[#3978F6]' : 'currentColor'} />
-              <span className="flex-1 truncate">{item.label}</span>
+              <Icon size={18} color={isActive ? 'var(--primary-blue)' : 'currentColor'} />
+              <span style={{ flex: 1 }}>{item.label}</span>
               {item.badge !== undefined && (
                 <span
-                  className={`text-[11px] font-bold py-0.5 px-2 rounded-full shrink-0 ${
-                    isActive ? 'bg-[#2563EB] text-white' : 'bg-[#17243A] text-slate-400'
-                  }`}
+                  style={{
+                    fontSize: '11px',
+                    fontWeight: '700',
+                    backgroundColor: isActive ? 'var(--primary-blue)' : 'var(--bg-surface-secondary)',
+                    color: isActive ? '#FFFFFF' : 'var(--text-muted)',
+                    padding: '2px 7px',
+                    borderRadius: '10px',
+                  }}
                 >
                   {item.badge}
                 </span>
@@ -124,18 +235,54 @@ export const Sidebar: React.FC<SidebarProps> = ({
       </nav>
 
       {/* Sidebar Footer: System Status */}
-      <div className="mt-auto pt-4 border-t border-slate-700/20 flex flex-col gap-2">
-        <div className="flex items-center justify-between text-[11px] text-slate-400 font-medium px-1">
+      <div
+        style={{
+          marginTop: 'auto',
+          paddingTop: '16px',
+          borderTop: '1px solid var(--border-subtle)',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '8px',
+        }}
+      >
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            fontSize: '11px',
+            color: 'var(--text-muted)',
+            fontWeight: '500',
+            padding: '0 4px',
+          }}
+        >
           <span>Linkryn Engine</span>
-          <span className="text-[#3978F6] font-semibold">v2.0 Pro</span>
+          <span style={{ color: 'var(--primary-blue)', fontWeight: '600' }}>v2.0 Pro</span>
         </div>
-        <div className="flex items-center gap-2 text-[11px] text-slate-300 py-1.5 px-2.5 bg-[#111B2D] rounded-lg border border-slate-700/30">
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            fontSize: '11px',
+            color: 'var(--text-secondary)',
+            padding: '7px 10px',
+            backgroundColor: 'var(--bg-surface)',
+            borderRadius: '6px',
+            border: '1px solid var(--border-subtle)',
+          }}
+        >
           <span
-            className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-              status?.connected ? 'bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.6)]' : 'bg-slate-400'
-            }`}
+            style={{
+              width: '7px',
+              height: '7px',
+              borderRadius: '50%',
+              backgroundColor: status?.connected ? 'var(--status-success)' : 'var(--text-muted)',
+              boxShadow: status?.connected ? '0 0 6px rgba(16, 185, 129, 0.6)' : 'none',
+              flexShrink: 0,
+            }}
           />
-          <span className="text-[11px] font-medium">
+          <span style={{ fontSize: '11px', fontWeight: '500' }}>
             {status?.connected ? 'Audio Gateway Active' : 'Audio Gateway Idle'}
           </span>
         </div>

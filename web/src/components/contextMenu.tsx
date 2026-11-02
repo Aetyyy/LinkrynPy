@@ -1,6 +1,6 @@
 import React from 'react';
 import { Play, ListPlus, FolderPlus, Heart, ExternalLink } from 'lucide-react';
-import type { ContextMenuState, Track } from '../types/musicTypes';
+import { ContextMenuState, Track } from '../types/music';
 
 interface ContextMenuProps {
   contextMenu: ContextMenuState;
@@ -29,65 +29,130 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
   return (
     <div
       style={{
+        position: 'fixed',
         left: `${contextMenu.x}px`,
         top: `${contextMenu.y}px`,
+        width: '210px',
+        backgroundColor: 'var(--bg-surface-elevated)',
+        border: '1px solid var(--border-subtle)',
+        borderRadius: '10px',
+        boxShadow: 'var(--shadow-lg)',
+        padding: '6px',
+        zIndex: 99999,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '2px',
       }}
-      className="fixed w-[210px] bg-[#152238] border border-slate-700/30 rounded-xl shadow-2xl p-1.5 z-[99999] flex flex-col gap-0.5 animate-fade-in"
+      className="animate-fade-in"
       onClick={(e) => e.stopPropagation()}
     >
-      <div className="px-2 py-1.5 border-b border-slate-700/30 mb-1">
-        <p className="text-xs font-bold text-slate-100 truncate">
+      <div style={{ padding: '6px 8px', borderBottom: '1px solid var(--border-subtle)', marginBottom: '4px' }}>
+        <p style={{ fontSize: '12px', fontWeight: '700', color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
           {song.title}
         </p>
       </div>
 
       <button
-        type="button"
         onClick={() => {
           onPlaySong(song);
           onClose();
         }}
-        className="flex items-center gap-2 px-2.5 py-2 rounded-lg text-[12.5px] font-medium text-slate-200 hover:bg-[#1E2D47] text-left cursor-pointer transition-colors"
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+          padding: '8px 10px',
+          borderRadius: '6px',
+          border: 'none',
+          backgroundColor: 'transparent',
+          color: 'var(--text-primary)',
+          fontSize: '12.5px',
+          fontWeight: '500',
+          cursor: 'pointer',
+          textAlign: 'left',
+        }}
+        onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'var(--bg-surface-hover)')}
+        onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
       >
-        <Play size={14} className="text-[#3978F6]" />
+        <Play size={14} color="var(--primary-blue)" />
         <span>Putar Sekarang</span>
       </button>
 
       <button
-        type="button"
         onClick={() => {
           onAddToQueue(song);
           onClose();
         }}
-        className="flex items-center gap-2 px-2.5 py-2 rounded-lg text-[12.5px] font-medium text-slate-200 hover:bg-[#1E2D47] text-left cursor-pointer transition-colors"
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+          padding: '8px 10px',
+          borderRadius: '6px',
+          border: 'none',
+          backgroundColor: 'transparent',
+          color: 'var(--text-primary)',
+          fontSize: '12.5px',
+          fontWeight: '500',
+          cursor: 'pointer',
+          textAlign: 'left',
+        }}
+        onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'var(--bg-surface-hover)')}
+        onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
       >
-        <ListPlus size={14} className="text-slate-400" />
+        <ListPlus size={14} color="var(--text-secondary)" />
         <span>Tambah ke Antrean</span>
       </button>
 
       <button
-        type="button"
         onClick={() => {
           onOpenAddToPlaylist(song);
           onClose();
         }}
-        className="flex items-center gap-2 px-2.5 py-2 rounded-lg text-[12.5px] font-medium text-slate-200 hover:bg-[#1E2D47] text-left cursor-pointer transition-colors"
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+          padding: '8px 10px',
+          borderRadius: '6px',
+          border: 'none',
+          backgroundColor: 'transparent',
+          color: 'var(--text-primary)',
+          fontSize: '12.5px',
+          fontWeight: '500',
+          cursor: 'pointer',
+          textAlign: 'left',
+        }}
+        onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'var(--bg-surface-hover)')}
+        onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
       >
-        <FolderPlus size={14} className="text-slate-400" />
+        <FolderPlus size={14} color="var(--text-secondary)" />
         <span>Tambah ke Playlist</span>
       </button>
 
       <button
-        type="button"
         onClick={() => {
           onToggleLike(song);
           onClose();
         }}
-        className={`flex items-center gap-2 px-2.5 py-2 rounded-lg text-[12.5px] font-medium hover:bg-[#1E2D47] text-left cursor-pointer transition-colors ${
-          liked ? 'text-[#3978F6]' : 'text-slate-200'
-        }`}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+          padding: '8px 10px',
+          borderRadius: '6px',
+          border: 'none',
+          backgroundColor: 'transparent',
+          color: liked ? 'var(--primary-blue)' : 'var(--text-primary)',
+          fontSize: '12.5px',
+          fontWeight: '500',
+          cursor: 'pointer',
+          textAlign: 'left',
+        }}
+        onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'var(--bg-surface-hover)')}
+        onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
       >
-        <Heart size={14} fill={liked ? '#3978F6' : 'none'} className={liked ? 'text-[#3978F6]' : 'text-slate-400'} />
+        <Heart size={14} fill={liked ? 'var(--primary-blue)' : 'none'} color={liked ? 'var(--primary-blue)' : 'currentColor'} />
         <span>{liked ? 'Hapus dari Disukai' : 'Sukai Lagu'}</span>
       </button>
 
@@ -97,7 +162,20 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
           target="_blank"
           rel="noreferrer"
           onClick={onClose}
-          className="flex items-center gap-2 px-2.5 py-2 rounded-lg text-xs text-slate-400 hover:text-slate-100 border-t border-slate-700/30 mt-1 transition-colors"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            padding: '8px 10px',
+            borderRadius: '6px',
+            color: 'var(--text-muted)',
+            fontSize: '12px',
+            textDecoration: 'none',
+            borderTop: '1px solid var(--border-subtle)',
+            marginTop: '4px',
+          }}
+          onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--text-primary)')}
+          onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text-muted)')}
         >
           <ExternalLink size={13} />
           <span>Buka di YouTube</span>
@@ -106,3 +184,4 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
     </div>
   );
 };
+

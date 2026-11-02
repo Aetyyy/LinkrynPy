@@ -53,7 +53,7 @@ class PlayNextCommand(commands.Cog):
         state.prefetched_autoplay_song = None
 
         await interaction.followup.send(f"⏩ **{song.title}** disisipkan ke nomor #1 antrean berikutnya!")
-        if not voice_client.is_playing() and not voice_client.is_paused():
+        if not voice_client.is_playing() and not voice_client.is_paused() and not getattr(state, "is_loading", False):
             manager.play_next(interaction.guild, interaction.channel)
 
 async def setup(bot: commands.Bot):

@@ -19,91 +19,154 @@ export const HistoryView: React.FC<HistoryViewProps> = ({
   isSongLiked,
   onOpenAddToPlaylist,
 }) => {
+  const getFallbackThumbnail = (url: string): string | undefined => {
+    const videoId = url.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|shorts\/))([A-Za-z0-9_-]{11})/)?.[1];
+    return videoId ? `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg` : undefined;
+  };
+
   return (
-    <div className="max-w-[1100px] mx-auto animate-fade-in">
-      {/* Header */}
-      <div className="flex items-center gap-2.5 mb-6">
-        <div className="w-9 h-9 rounded-lg bg-blue-500/10 border border-blue-500/30 flex items-center justify-center">
-          <History size={20} className="text-blue-500" />
+    <div style={{ maxWidth: '1100px', margin: '0 auto' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '24px' }}>
+        <div
+          style={{
+            width: '36px',
+            height: '36px',
+            borderRadius: '8px',
+            backgroundColor: 'var(--active-blue-bg)',
+            border: '1px solid var(--active-blue-border)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          <History size={20} color="var(--primary-blue)" />
         </div>
         <div>
-          <h1 className="text-2xl font-extrabold tracking-tight text-slate-100">
+          <h1 style={{ fontSize: '24px', fontWeight: '800', letterSpacing: '-0.5px', color: 'var(--text-primary)' }}>
             Riwayat Pemutaran
           </h1>
-          <p className="text-[13px] text-slate-400 mt-0.5">
+          <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginTop: '2px' }}>
             Daftar trek yang baru-baru ini diputar di bot musik server ini.
           </p>
         </div>
       </div>
 
       {historyList.length === 0 ? (
-        <div className="py-16 px-5 text-center bg-[#131E30] rounded-xl border border-slate-700/30">
-          <History size={40} className="text-slate-500 mx-auto mb-3" />
-          <h3 className="text-base font-semibold text-slate-200 mb-1">
+        <div
+          style={{
+            padding: '60px 20px',
+            textAlign: 'center',
+            backgroundColor: 'var(--bg-surface)',
+            borderRadius: '12px',
+            border: '1px solid var(--border-subtle)',
+          }}
+        >
+          <History size={40} color="var(--text-muted)" style={{ margin: '0 auto 12px auto' }} />
+          <h3 style={{ fontSize: '16px', fontWeight: '600', color: 'var(--text-primary)', marginBottom: '4px' }}>
             Belum ada riwayat pemutaran
           </h3>
-          <p className="text-[13px] text-slate-400">
+          <p style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
             Lagu yang selesai diputar akan otomatis tercatat di halaman ini.
           </p>
         </div>
       ) : (
-        <div className="bg-[#131E30] rounded-xl border border-slate-700/30 overflow-hidden">
-          {/* Table Header */}
-          <div className="grid grid-cols-[40px_1fr_140px_100px] px-4.5 py-3 border-b border-slate-700/30 text-[11px] uppercase font-bold text-slate-400 tracking-wider">
+        <div
+          style={{
+            backgroundColor: 'var(--bg-surface)',
+            borderRadius: '12px',
+            border: '1px solid var(--border-subtle)',
+            overflow: 'hidden',
+          }}
+        >
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: '40px 1fr 140px 100px',
+              padding: '12px 18px',
+              borderBottom: '1px solid var(--border-subtle)',
+              fontSize: '11px',
+              textTransform: 'uppercase',
+              fontWeight: '700',
+              color: 'var(--text-muted)',
+            }}
+          >
             <span>#</span>
             <span>Judul & Artis</span>
-            <span className="text-right flex items-center justify-end gap-1">
+            <span style={{ textAlign: 'right', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '4px' }}>
               <Clock size={12} /> Durasi
             </span>
-            <span className="text-right">Aksi</span>
+            <span style={{ textAlign: 'right' }}>Aksi</span>
           </div>
 
-          {/* Rows */}
           {historyList.map((track, idx) => {
             const liked = isSongLiked(track.url);
             return (
               <div
                 key={track.url || idx}
                 onContextMenu={(e) => onContextMenu(e, track)}
-                className={`grid grid-cols-[40px_1fr_140px_100px] items-center px-4.5 py-2.5 cursor-pointer transition-colors hover:bg-[#1A263B] ${
-                  idx < historyList.length - 1 ? 'border-b border-slate-700/20' : ''
-                }`}
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: '40px 1fr 140px 100px',
+                  alignItems: 'center',
+                  padding: '10px 18px',
+                  borderBottom: idx < historyList.length - 1 ? '1px solid var(--border-subtle)' : 'none',
+                  cursor: 'pointer',
+                  transition: 'background-color 0.15s ease',
+                }}
+                onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'var(--bg-surface-elevated)')}
+                onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
               >
-                <span className="text-xs text-slate-400 font-medium">
+                <span style={{ fontSize: '12px', color: 'var(--text-muted)', fontWeight: '500' }}>
                   {idx + 1}
                 </span>
 
                 <div
                   onClick={() => onPlaySong(track)}
-                  className="flex items-center gap-3 min-w-0 pr-3"
+                  style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: 0, paddingRight: '12px' }}
                 >
                   <img
-                    src={track.thumbnail || 'https://via.placeholder.com/40'}
+                    src={track.thumbnail || getFallbackThumbnail(track.url) || 'https://placehold.co/80x80/172234/8aa4c8?text=♪'}
                     alt=""
-                    className="w-10 h-10 rounded-md object-cover shrink-0"
+                    style={{ width: '40px', height: '40px', borderRadius: '6px', objectFit: 'cover' }}
+                    onError={(event) => {
+                      const fallbackThumbnail = getFallbackThumbnail(track.url);
+                      if (fallbackThumbnail && event.currentTarget.src !== fallbackThumbnail) {
+                        event.currentTarget.src = fallbackThumbnail;
+                      } else {
+                        event.currentTarget.style.visibility = 'hidden';
+                      }
+                    }}
                   />
-                  <div className="min-w-0">
-                    <p className="text-[13.5px] font-semibold text-slate-100 truncate" title={track.title}>
+                  <div style={{ minWidth: 0 }}>
+                    <p style={{ fontSize: '13.5px', fontWeight: '600', color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', margin: 0 }}>
                       {track.title}
                     </p>
-                    <p className="text-xs text-slate-400 truncate mt-0.5" title={track.uploader || track.artist || 'Artis'}>
+                    <p style={{ fontSize: '12px', color: 'var(--text-secondary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: '2px' }}>
                       {track.uploader || track.artist || 'Artis'}
                     </p>
                   </div>
                 </div>
 
-                <span className="text-[12.5px] text-slate-400 text-right">
+                <span style={{ fontSize: '12.5px', color: 'var(--text-muted)', textAlign: 'right' }}>
                   {track.duration_str || '--:--'}
                 </span>
 
-                <div className="flex items-center justify-end gap-1.5">
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '6px' }}>
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
                       onOpenAddToPlaylist(track);
                     }}
                     title="Tambah ke Playlist"
-                    className="text-slate-400 hover:text-slate-200 p-1.5 rounded-md hover:bg-slate-800 transition-colors"
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      color: 'var(--text-muted)',
+                      cursor: 'pointer',
+                      padding: '6px',
+                    }}
+                    onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--text-primary)')}
+                    onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text-muted)')}
                   >
                     <FolderPlus size={16} />
                   </button>
@@ -114,12 +177,15 @@ export const HistoryView: React.FC<HistoryViewProps> = ({
                       onToggleLike(track);
                     }}
                     title={liked ? 'Hapus dari Disukai' : 'Sukai Lagu'}
-                    className="p-1.5 rounded-md hover:bg-slate-800 transition-colors"
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      color: liked ? 'var(--primary-blue)' : 'var(--text-muted)',
+                      cursor: 'pointer',
+                      padding: '6px',
+                    }}
                   >
-                    <Heart
-                      size={16}
-                      className={liked ? 'text-blue-500 fill-blue-500' : 'text-slate-400 hover:text-slate-200'}
-                    />
+                    <Heart size={16} fill={liked ? 'var(--primary-blue)' : 'none'} />
                   </button>
                 </div>
               </div>

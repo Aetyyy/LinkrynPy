@@ -35,7 +35,7 @@ class LikedCommand(commands.Cog):
                 state.add(Song(item, interaction.user))
 
             await interaction.response.send_message(f"❤️ Memuat **{len(likes)}** lagu yang Anda sukai ke dalam antrean!")
-            if not voice_client.is_playing() and not voice_client.is_paused():
+            if not voice_client.is_playing() and not voice_client.is_paused() and not getattr(state, "is_loading", False):
                 safe_channel = manager.get_safe_text_channel(interaction.guild, interaction.channel)
                 manager.play_next(interaction.guild, safe_channel)
         else:

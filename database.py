@@ -6,6 +6,7 @@ import urllib.parse
 import aiohttp
 from typing import List, Dict, Optional
 from dotenv import load_dotenv
+from audio_filter_utils import EQ_BAND_COUNT, normalize_custom_eq
 
 # Muat environment variable dari .env
 load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
@@ -106,6 +107,20 @@ class DatabaseManager:
                     thumbnail TEXT,
                     uploader TEXT,
                     played_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS user_filters (
+                    user_id TEXT PRIMARY KEY,
+                    bass_boost TEXT DEFAULT 'off',
+                    equalizer TEXT DEFAULT 'off',
+                    custom_eq TEXT DEFAULT '[0,0,0,0,0,0,0,0,0,0]',
+                    speed REAL DEFAULT 1.0,
+                    treble INTEGER DEFAULT 0,
+                    nightcore INTEGER DEFAULT 0,
+                    vaporwave INTEGER DEFAULT 0,
+                    karaoke INTEGER DEFAULT 0,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """)
             conn.commit()
@@ -752,5 +767,176 @@ class DatabaseManager:
         except Exception as e:
             print(f"[History Get Error] {e}")
             return []
+
+    # ==========================
+    # USER AUDIO FILTERS
+    # ==========================
+    def get_default_filters(self) -> dict:
+        return {
+            "bass_boost": "off",
+            "equalizer": "off",
+            "custom_eq": [0] * EQ_BAND_COUNT,
+            "speed": 1.0,
+            "treble": 0,
+            "nightcore": False,
+            "vaporwave": False,
+            "karaoke": False,
+        }
+
+    async def get_user_filters(self, user_id: str) -> dict:
+        if not user_id:
+            return self.get_default_filters()
+
+        # 1. Supabase jika aktif
+        if self.use_supabase:
+            try:
+                session = await self.get_session()
+                async with session.get(f"{SUPABASE_URL}/rest/v1/user_filters?user_id=eq.{user_id}&select=*") as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        if data and isinstance(data, list):
+                            row = data[0]
+                            custom_eq = row.get("custom_eq", [0] * EQ_BAND_COUNT)
+                            if isinstance(custom_eq, str):
+                                try:
+                                    custom_eq = json.loads(custom_eq)
+                                except Exception:
+                                    custom_eq = [0] * EQ_BAND_COUNT
+                            return {
+                                "bass_boost": str(row.get("bass_boost", "off")),
+                                "equalizer": str(row.get("equalizer", "off")),
+                                "custom_eq": normalize_custom_eq(custom_eq),
+                                "speed": float(row.get("speed", 1.0)),
+                                "treble": int(row.get("treble", 0)),
+                                "nightcore": bool(row.get("nightcore")),
+                                "vaporwave": bool(row.get("vaporwave")),
+                                "karaoke": bool(row.get("karaoke")),
+                            }
+                    else:
+                        await resp.text()
+            except Exception:
+                pass
+
+        # 2. SQLite lokal
+        try:
+            conn = sqlite3.connect(SQLITE_PATH)
+            cur = conn.cursor()
+            cur.execute("""
+                SELECT bass_boost, equalizer, custom_eq, speed, treble, nightcore, vaporwave, karaoke
+                FROM user_filters
+                WHERE user_id = ?
+            """, (str(user_id),))
+            row = cur.fetchone()
+            conn.close()
+            if row:
+                custom_eq = [0] * EQ_BAND_COUNT
+                if row[2]:
+                    try:
+                        custom_eq = json.loads(row[2])
+                    except Exception:
+                        custom_eq = [0] * EQ_BAND_COUNT
+                return {
+                    "bass_boost": row[0] or "off",
+                    "equalizer": row[1] or "off",
+                    "custom_eq": normalize_custom_eq(custom_eq),
+                    "speed": float(row[3] or 1.0),
+                    "treble": int(row[4] or 0),
+                    "nightcore": bool(row[5]),
+                    "vaporwave": bool(row[6]),
+                    "karaoke": bool(row[7]),
+                }
+        except Exception as e:
+            print(f"[SQLite Error] get_user_filters: {e}")
+
+        return self.get_default_filters()
+
+    async def save_user_filters(self, user_id: str, filters: dict) -> bool:
+        if not user_id:
+            return False
+        
+        bass_boost = str(filters.get("bass_boost", "off"))
+        equalizer = str(filters.get("equalizer", "off"))
+        custom_eq = normalize_custom_eq(filters.get("custom_eq", [0] * EQ_BAND_COUNT))
+        custom_eq_str = json.dumps(custom_eq)
+        speed = float(filters.get("speed", 1.0))
+        treble = int(filters.get("treble", 0))
+        nightcore = 1 if filters.get("nightcore") else 0
+        vaporwave = 1 if filters.get("vaporwave") else 0
+        karaoke = 1 if filters.get("karaoke") else 0
+
+        # SQLite
+        try:
+            conn = sqlite3.connect(SQLITE_PATH)
+            cur = conn.cursor()
+            cur.execute("""
+                INSERT INTO user_filters (user_id, bass_boost, equalizer, custom_eq, speed, treble, nightcore, vaporwave, karaoke, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                ON CONFLICT(user_id) DO UPDATE SET
+                    bass_boost = excluded.bass_boost,
+                    equalizer = excluded.equalizer,
+                    custom_eq = excluded.custom_eq,
+                    speed = excluded.speed,
+                    treble = excluded.treble,
+                    nightcore = excluded.nightcore,
+                    vaporwave = excluded.vaporwave,
+                    karaoke = excluded.karaoke,
+                    updated_at = CURRENT_TIMESTAMP
+            """, (str(user_id), bass_boost, equalizer, custom_eq_str, speed, treble, nightcore, vaporwave, karaoke))
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            print(f"[SQLite Error] save_user_filters: {e}")
+
+        # Supabase
+        if self.use_supabase:
+            try:
+                payload = {
+                    "user_id": str(user_id),
+                    "bass_boost": bass_boost,
+                    "equalizer": equalizer,
+                    "custom_eq": custom_eq,
+                    "speed": speed,
+                    "treble": treble,
+                    "nightcore": bool(nightcore),
+                    "vaporwave": bool(vaporwave),
+                    "karaoke": bool(karaoke),
+                }
+                session = await self.get_session()
+                async with session.post(f"{SUPABASE_URL}/rest/v1/user_filters", json=payload, headers=self._supabase_headers(upsert=True)) as resp:
+                    await resp.text()
+            except Exception:
+                pass
+
+        return True
+
+    async def update_user_filter(self, user_id: str, filter_name: str, value) -> dict:
+        filters = await self.get_user_filters(user_id)
+        if filter_name == "bass_boost":
+            filters["bass_boost"] = str(value)
+        elif filter_name == "equalizer":
+            filters["equalizer"] = str(value)
+        elif filter_name == "custom_eq":
+            if isinstance(value, list) and len(value) in (5, EQ_BAND_COUNT):
+                filters["custom_eq"] = normalize_custom_eq(value)
+                filters["equalizer"] = "custom"
+        elif filter_name == "nightcore":
+            filters["nightcore"] = not filters.get("nightcore", False)
+            if filters["nightcore"]:
+                filters["vaporwave"] = False
+        elif filter_name == "vaporwave":
+            filters["vaporwave"] = not filters.get("vaporwave", False)
+            if filters["vaporwave"]:
+                filters["nightcore"] = False
+        elif filter_name == "speed":
+            filters["speed"] = max(0.5, min(2.0, float(value)))
+        elif filter_name == "treble":
+            filters["treble"] = max(-10, min(10, int(value)))
+        elif filter_name == "karaoke":
+            filters["karaoke"] = not filters.get("karaoke", False)
+        elif filter_name == "reset":
+            filters = self.get_default_filters()
+
+        await self.save_user_filters(user_id, filters)
+        return filters
 
 db = DatabaseManager()

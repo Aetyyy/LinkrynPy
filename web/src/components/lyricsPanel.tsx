@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useState } from 'react';
-import { X, Mic2, Clock, RotateCcw, ArrowDown } from 'lucide-react';
+import { X, Mic2, ArrowDown } from 'lucide-react';
 import { LyricsInfo } from '../types/music';
 
 interface LyricsPanelProps {
@@ -9,8 +9,6 @@ interface LyricsPanelProps {
   loading: boolean;
   onClose: () => void;
   onSearchLyrics: (customQuery: string) => void;
-  lyricsOffset: number;
-  onLyricsOffsetChange: (offset: number) => void;
 }
 
 export const LyricsPanel: React.FC<LyricsPanelProps> = ({
@@ -20,8 +18,6 @@ export const LyricsPanel: React.FC<LyricsPanelProps> = ({
   loading,
   onClose,
   onSearchLyrics,
-  lyricsOffset,
-  onLyricsOffsetChange,
 }) => {
   const [customSearch, setCustomSearch] = useState('');
   const activeLineRef = useRef<HTMLDivElement>(null);
@@ -68,26 +64,37 @@ export const LyricsPanel: React.FC<LyricsPanelProps> = ({
     }
   };
 
-  const adjustOffset = (delta: number) => {
-    const nextVal = Math.round((lyricsOffset + delta) * 10) / 10;
-    onLyricsOffsetChange(nextVal);
-  };
-
-  const introOffsetVal = lyricsInfo.introOffset ?? lyricsInfo.suggestedOffset ?? 0;
-  const hasIntroOffset = Math.abs(introOffsetVal) >= 1.0;
-  const isIntroApplied = Boolean(hasIntroOffset && Math.abs(lyricsOffset - introOffsetVal) < 0.4);
-
   return (
-    <div className="w-[380px] bg-[#0E1726] border-l border-slate-700/30 flex flex-col h-full z-20 relative animate-slide-right">
+    <div
+      style={{
+        width: '380px',
+        backgroundColor: 'var(--bg-sidebar)',
+        borderLeft: '1px solid var(--border-subtle)',
+        display: 'flex',
+        flexDirection: 'column',
+        height: '100%',
+        zIndex: 20,
+        position: 'relative',
+      }}
+      className="animate-slide-right"
+    >
       {/* Header */}
-      <div className="p-4 px-5 border-b border-slate-700/30 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Mic2 size={18} className="text-blue-500" />
+      <div
+        style={{
+          padding: '16px 20px',
+          borderBottom: '1px solid var(--border-subtle)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <Mic2 size={18} color="var(--primary-blue)" />
           <div>
-            <h2 className="text-[15px] font-bold text-slate-100">
+            <h2 style={{ fontSize: '15px', fontWeight: '700', color: 'var(--text-primary)' }}>
               Lirik Lagu
             </h2>
-            <span className={`text-[10.5px] font-medium ${lyricsInfo.isSynced ? 'text-emerald-400' : 'text-slate-400'}`}>
+            <span style={{ fontSize: '10.5px', color: lyricsInfo.isSynced ? 'var(--status-success)' : 'var(--text-muted)' }}>
               {lyricsInfo.isSynced ? '● Karaoke Sinkron' : 'Mode Baca'}
             </span>
           </div>
@@ -95,119 +102,68 @@ export const LyricsPanel: React.FC<LyricsPanelProps> = ({
 
         <button
           onClick={onClose}
-          className="text-slate-400 hover:text-slate-200 transition-colors p-1 rounded-md hover:bg-slate-800"
-          title="Tutup Lirik"
+          style={{
+            background: 'none',
+            border: 'none',
+            color: 'var(--text-muted)',
+            cursor: 'pointer',
+            padding: '4px',
+          }}
         >
           <X size={18} />
         </button>
       </div>
 
       {/* Manual Lyrics Search Input */}
-      <div className="p-2.5 px-4 border-b border-slate-700/30">
-        <form onSubmit={handleSearchSubmit} className="flex gap-1.5">
+      <div style={{ padding: '10px 16px', borderBottom: '1px solid var(--border-subtle)' }}>
+        <form onSubmit={handleSearchSubmit}>
           <input
             type="text"
-            placeholder={currentSongTitle ? `Lirik "${currentSongTitle.slice(0, 20)}..."` : 'Cari judul lagu...'}
+            aria-label="Cari lirik alternatif"
+            placeholder={currentSongTitle ? `Lirik untuk "${currentSongTitle.slice(0, 20)}..."` : 'Cari judul lagu...'}
             value={customSearch}
             onChange={(e) => setCustomSearch(e.target.value)}
-            className="flex-1 px-2.5 py-1.5 bg-[#172234] border border-slate-700/40 rounded-md text-slate-100 text-xs focus:outline-none focus:border-blue-500 transition-colors"
+            style={{
+              width: '100%',
+              padding: '6px 10px',
+              backgroundColor: 'var(--bg-surface)',
+              border: '1px solid var(--border-subtle)',
+              borderRadius: '6px',
+              color: 'var(--text-primary)',
+              fontSize: '12px',
+              outline: 'none',
+            }}
           />
-          <button
-            type="submit"
-            className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-md text-xs font-semibold cursor-pointer transition-colors shadow-xs"
-          >
-            Cari
-          </button>
         </form>
       </div>
-
-      {/* Timing & Cutscene Synchronization Toolbar */}
-      {lyricsInfo.isSynced && (
-        <div className="p-2 px-4 bg-[#131E30] border-b border-slate-700/30 flex flex-col gap-2">
-          {/* Smart Cutscene / SponsorBlock Detection Prompt */}
-          {hasIntroOffset && (
-            <div
-              className={`flex items-center justify-between px-2.5 py-1.5 rounded-md text-[11px] transition-colors ${
-                isIntroApplied
-                  ? 'bg-blue-950/40 border border-blue-500/30 text-blue-300'
-                  : 'bg-amber-500/10 border border-amber-500/30 text-amber-300'
-              }`}
-            >
-              <div className="flex items-center gap-1.5">
-                <Clock size={12} className={isIntroApplied ? 'text-blue-400' : 'text-amber-400'} />
-                <span>
-                  {isIntroApplied
-                    ? `Intro offset aktif (+${introOffsetVal}s)`
-                    : `Terdeteksi intro MV (+${introOffsetVal}s)`}
-                </span>
-              </div>
-              <button
-                onClick={() => onLyricsOffsetChange(isIntroApplied ? 0 : introOffsetVal)}
-                className={`px-2 py-0.5 rounded text-[10.5px] font-semibold cursor-pointer transition-colors ${
-                  isIntroApplied
-                    ? 'bg-slate-800 text-slate-300 hover:bg-slate-700'
-                    : 'bg-blue-600 hover:bg-blue-500 text-white shadow-xs'
-                }`}
-              >
-                {isIntroApplied ? 'Reset' : 'Terapkan'}
-              </button>
-            </div>
-          )}
-
-          {/* Precision Offset Fine-Tuning */}
-          <div className="flex items-center justify-between text-[11px]">
-            <span className="text-slate-400 flex items-center gap-1">
-              <span>Sinkron:</span>
-              <strong className={`font-semibold ${lyricsOffset !== 0 ? 'text-blue-400' : 'text-slate-200'}`}>
-                {lyricsOffset > 0 ? `+${lyricsOffset.toFixed(1)}s` : `${lyricsOffset.toFixed(1)}s`}
-              </strong>
-            </span>
-
-            <div className="flex items-center gap-1">
-              <button
-                onClick={() => adjustOffset(-0.5)}
-                title="Mundurkan lirik 0.5 detik (-0.5s)"
-                className="px-2 py-0.5 rounded border border-slate-700/40 bg-[#172234] hover:bg-slate-800 text-slate-200 cursor-pointer text-[10.5px] font-medium transition-colors"
-              >
-                -0.5s
-              </button>
-              <button
-                onClick={() => onLyricsOffsetChange(0)}
-                title="Reset offset ke 0s"
-                className="px-1.5 py-0.5 rounded border border-slate-700/40 bg-[#172234] hover:bg-slate-800 text-slate-400 hover:text-slate-200 cursor-pointer text-[10.5px] flex items-center transition-colors"
-              >
-                <RotateCcw size={11} />
-              </button>
-              <button
-                onClick={() => adjustOffset(0.5)}
-                title="Majukan lirik 0.5 detik (+0.5s)"
-                className="px-2 py-0.5 rounded border border-slate-700/40 bg-[#172234] hover:bg-slate-800 text-slate-200 cursor-pointer text-[10.5px] font-medium transition-colors"
-              >
-                +0.5s
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Lyrics Content */}
       <div
         ref={scrollContainerRef}
         onScroll={handleContainerScroll}
-        className="flex-1 overflow-y-auto p-6 px-5 flex flex-col gap-3.5 text-center relative scrollbar-thin scrollbar-thumb-slate-700"
+        style={{
+          flex: 1,
+          overflowY: 'auto',
+          padding: '24px 20px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '14px',
+          textAlign: 'center',
+          position: 'relative',
+        }}
       >
         {loading ? (
-          <div className="py-16 text-center text-slate-400">
-            <Mic2 size={32} className="text-blue-500 mx-auto mb-3 animate-spin-slow" />
-            <p className="text-[13px]">Mencari lirik otomatis...</p>
+          <div style={{ padding: '60px 0', textAlign: 'center', color: 'var(--text-muted)' }}>
+            <Mic2 size={32} color="var(--primary-blue)" style={{ margin: '0 auto 12px auto' }} className="animate-spin-slow" />
+            <p style={{ fontSize: '13px' }}>Mencari lirik otomatis...</p>
           </div>
         ) : lyricsInfo.lines.length === 0 ? (
-          <div className="py-16 text-center text-slate-400">
-            <p className="text-sm font-semibold text-slate-200">
+          <div style={{ padding: '60px 0', textAlign: 'center', color: 'var(--text-muted)' }}>
+            <p style={{ fontSize: '14px', fontWeight: '600', color: 'var(--text-secondary)' }}>
               Lirik belum tersedia
             </p>
-            <p className="text-xs mt-1.5 text-slate-400">
-              Coba cari manual dengan form di atas jika judul lagu mengandung teks ekstra.
+            <p style={{ fontSize: '12px', marginTop: '6px' }}>
+              Coba ubah judul di kolom atas lalu tekan Enter untuk mencari lagi.
             </p>
           </div>
         ) : (
@@ -217,11 +173,15 @@ export const LyricsPanel: React.FC<LyricsPanelProps> = ({
               <div
                 key={idx}
                 ref={isActive ? activeLineRef : null}
-                className={`py-1 leading-relaxed transition-all duration-200 ${
-                  isActive
-                    ? 'text-[17px] font-bold text-blue-400 scale-[1.04]'
-                    : 'text-[13.5px] font-normal text-slate-400 hover:text-slate-300'
-                }`}
+                style={{
+                  fontSize: isActive ? '17px' : '13.5px',
+                  fontWeight: isActive ? '700' : '400',
+                  color: isActive ? 'var(--soft-blue)' : 'var(--text-muted)',
+                  lineHeight: '1.6',
+                  transition: 'all 0.22s ease',
+                  transform: isActive ? 'scale(1.04)' : 'scale(1)',
+                  padding: '4px 0',
+                }}
               >
                 {line.text}
               </div>
@@ -234,7 +194,27 @@ export const LyricsPanel: React.FC<LyricsPanelProps> = ({
       {isUserScrolling && lyricsInfo.isSynced && activeLineIndex >= 0 && (
         <button
           onClick={() => scrollToActiveLine(true)}
-          className="absolute bottom-5 left-1/2 -translate-x-1/2 bg-blue-600 hover:bg-blue-500 text-white rounded-full px-3.5 py-1.5 text-[11.5px] font-semibold flex items-center gap-1.5 cursor-pointer shadow-lg shadow-black/40 z-30 transition-all animate-fade-in"
+          style={{
+            position: 'absolute',
+            bottom: '20px',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            backgroundColor: 'var(--primary-blue)',
+            color: '#FFFFFF',
+            border: 'none',
+            borderRadius: '20px',
+            padding: '6px 14px',
+            fontSize: '11.5px',
+            fontWeight: '600',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            cursor: 'pointer',
+            boxShadow: '0 4px 14px rgba(0, 0, 0, 0.4)',
+            zIndex: 30,
+            transition: 'all 0.18s ease',
+          }}
+          className="animate-fade-in"
         >
           <ArrowDown size={13} />
           <span>Kembali ke lirik aktif</span>

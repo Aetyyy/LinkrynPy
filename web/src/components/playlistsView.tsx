@@ -32,41 +32,83 @@ export const PlaylistsView: React.FC<PlaylistsViewProps> = ({
   // If a playlist is selected, show detail view
   if (selectedPlaylist) {
     return (
-      <div className="max-w-[1100px] mx-auto animate-fade-in">
+      <div style={{ maxWidth: '1100px', margin: '0 auto' }}>
         {/* Back and Header */}
         <button
           onClick={onBackToPlaylists}
-          className="inline-flex items-center gap-1.5 text-slate-400 hover:text-slate-100 text-[13px] font-semibold cursor-pointer mb-4 py-1 transition-colors"
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '6px',
+            backgroundColor: 'transparent',
+            border: 'none',
+            color: 'var(--text-secondary)',
+            fontSize: '13px',
+            fontWeight: '600',
+            cursor: 'pointer',
+            marginBottom: '16px',
+            padding: '4px 0',
+          }}
+          onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--text-primary)')}
+          onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text-secondary)')}
         >
           <ArrowLeft size={16} />
           <span>Kembali ke Koleksi Playlist</span>
         </button>
 
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center gap-4">
-            <div className="w-16 h-16 rounded-xl bg-[#1A263B] border border-slate-700/40 flex items-center justify-center shadow-md">
-              <Folder size={32} className="text-blue-500" />
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+            <div
+              style={{
+                width: '64px',
+                height: '64px',
+                borderRadius: '12px',
+                backgroundColor: 'var(--bg-surface-secondary)',
+                border: '1px solid var(--border-subtle)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                boxShadow: 'var(--shadow-sm)',
+              }}
+            >
+              <Folder size={32} color="var(--primary-blue)" />
             </div>
             <div>
-              <span className="text-[11px] uppercase text-slate-400 font-bold tracking-wider">
+              <span style={{ fontSize: '11px', textTransform: 'uppercase', color: 'var(--text-muted)', fontWeight: '700', letterSpacing: '0.5px' }}>
                 Playlist Kustom
               </span>
-              <h1 className="text-2xl font-extrabold tracking-tight text-slate-100 mt-0.5">
+              <h1 style={{ fontSize: '24px', fontWeight: '800', letterSpacing: '-0.5px', color: 'var(--text-primary)', margin: '2px 0 0 0' }}>
                 {selectedPlaylist.name}
               </h1>
-              <p className="text-[12.5px] text-slate-400 mt-0.5">
+              <p style={{ fontSize: '12.5px', color: 'var(--text-secondary)', marginTop: '2px' }}>
                 {playlistSongs.length} lagu tersimpan
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2.5">
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             {playlistSongs.length > 0 && (
               <button
                 onClick={() => onPlayPlaylist(selectedPlaylist.id)}
-                className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-blue-600 hover:bg-blue-500 text-white text-[13px] font-semibold cursor-pointer shadow-lg shadow-blue-600/25 transition-all"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  padding: '10px 20px',
+                  borderRadius: '999px',
+                  backgroundColor: 'var(--primary-blue)',
+                  color: '#FFFFFF',
+                  border: 'none',
+                  fontSize: '13px',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                  boxShadow: '0 4px 14px rgba(57, 120, 246, 0.35)',
+                  transition: 'background 0.18s ease',
+                }}
+                onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'var(--hover-blue)')}
+                onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'var(--primary-blue)')}
               >
-                <Play size={15} className="fill-white" />
+                <Play size={15} fill="#FFFFFF" />
                 <span>Putar Playlist</span>
               </button>
             )}
@@ -74,7 +116,19 @@ export const PlaylistsView: React.FC<PlaylistsViewProps> = ({
             <button
               onClick={() => onDeletePlaylist(selectedPlaylist.id)}
               title="Hapus Playlist"
-              className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 text-[12.5px] font-semibold cursor-pointer transition-colors"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '9px 14px',
+                borderRadius: '8px',
+                backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                color: 'var(--status-danger)',
+                border: '1px solid rgba(239, 68, 68, 0.25)',
+                fontSize: '12.5px',
+                fontWeight: '600',
+                cursor: 'pointer',
+              }}
             >
               <Trash2 size={15} />
               <span>Hapus</span>
@@ -84,69 +138,111 @@ export const PlaylistsView: React.FC<PlaylistsViewProps> = ({
 
         {/* Songs List */}
         {playlistSongs.length === 0 ? (
-          <div className="py-16 px-5 text-center bg-[#131E30] rounded-xl border border-slate-700/30">
-            <Music size={36} className="text-slate-500 mx-auto mb-3" />
-            <h3 className="text-[15px] font-semibold text-slate-200 mb-1">
+          <div
+            style={{
+              padding: '60px 20px',
+              textAlign: 'center',
+              backgroundColor: 'var(--bg-surface)',
+              borderRadius: '12px',
+              border: '1px solid var(--border-subtle)',
+            }}
+          >
+            <Music size={36} color="var(--text-muted)" style={{ margin: '0 auto 12px auto' }} />
+            <h3 style={{ fontSize: '15px', fontWeight: '600', color: 'var(--text-primary)', marginBottom: '4px' }}>
               Playlist ini masih kosong
             </h3>
-            <p className="text-[12.5px] text-slate-400">
+            <p style={{ fontSize: '12.5px', color: 'var(--text-muted)' }}>
               Tambahkan lagu ke playlist ini dari menu rekomendasi atau hasil pencarian.
             </p>
           </div>
         ) : (
-          <div className="bg-[#131E30] rounded-xl border border-slate-700/30 overflow-hidden">
-            <div className="grid grid-cols-[40px_1fr_140px_80px] px-4.5 py-3 border-b border-slate-700/30 text-[11px] uppercase font-bold text-slate-400 tracking-wider">
+          <div
+            style={{
+              backgroundColor: 'var(--bg-surface)',
+              borderRadius: '12px',
+              border: '1px solid var(--border-subtle)',
+              overflow: 'hidden',
+            }}
+          >
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: '40px 1fr 140px 80px',
+                padding: '12px 18px',
+                borderBottom: '1px solid var(--border-subtle)',
+                fontSize: '11px',
+                textTransform: 'uppercase',
+                fontWeight: '700',
+                color: 'var(--text-muted)',
+              }}
+            >
               <span>#</span>
               <span>Judul & Artis</span>
-              <span className="text-right flex items-center justify-end gap-1">
+              <span style={{ textAlign: 'right', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '4px' }}>
                 <Clock size={12} /> Durasi
               </span>
-              <span className="text-right">Aksi</span>
+              <span style={{ textAlign: 'right' }}>Aksi</span>
             </div>
 
             {playlistSongs.map((track, idx) => (
               <div
                 key={track.id || track.url || idx}
                 onContextMenu={(e) => onContextMenu(e, track)}
-                className={`grid grid-cols-[40px_1fr_140px_80px] items-center px-4.5 py-2.5 cursor-pointer transition-colors hover:bg-[#1A263B] ${
-                  idx < playlistSongs.length - 1 ? 'border-b border-slate-700/20' : ''
-                }`}
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: '40px 1fr 140px 80px',
+                  alignItems: 'center',
+                  padding: '10px 18px',
+                  borderBottom: idx < playlistSongs.length - 1 ? '1px solid var(--border-subtle)' : 'none',
+                  cursor: 'pointer',
+                  transition: 'background-color 0.15s ease',
+                }}
+                onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'var(--bg-surface-elevated)')}
+                onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
               >
-                <span className="text-xs text-slate-400 font-medium">
+                <span style={{ fontSize: '12px', color: 'var(--text-muted)', fontWeight: '500' }}>
                   {idx + 1}
                 </span>
 
                 <div
                   onClick={() => onPlaySong(track)}
-                  className="flex items-center gap-3 min-w-0 pr-3"
+                  style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: 0, paddingRight: '12px' }}
                 >
                   <img
                     src={track.thumbnail || 'https://via.placeholder.com/40'}
                     alt=""
-                    className="w-10 h-10 rounded-md object-cover shrink-0"
+                    style={{ width: '40px', height: '40px', borderRadius: '6px', objectFit: 'cover' }}
                   />
-                  <div className="min-w-0">
-                    <p className="text-[13.5px] font-semibold text-slate-100 truncate" title={track.title}>
+                  <div style={{ minWidth: 0 }}>
+                    <p style={{ fontSize: '13.5px', fontWeight: '600', color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', margin: 0 }}>
                       {track.title}
                     </p>
-                    <p className="text-xs text-slate-400 truncate mt-0.5" title={track.uploader || track.artist || 'Artis'}>
+                    <p style={{ fontSize: '12px', color: 'var(--text-secondary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: '2px' }}>
                       {track.uploader || track.artist || 'Artis'}
                     </p>
                   </div>
                 </div>
 
-                <span className="text-[12.5px] text-slate-400 text-right">
+                <span style={{ fontSize: '12.5px', color: 'var(--text-muted)', textAlign: 'right' }}>
                   {track.duration_str || '--:--'}
                 </span>
 
-                <div className="flex items-center justify-end">
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
                       if (track.id) onRemoveSongFromPlaylist(selectedPlaylist.id, track.id);
                     }}
                     title="Hapus dari playlist"
-                    className="text-slate-400 hover:text-red-400 p-1.5 rounded-md hover:bg-red-500/10 transition-colors"
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      color: 'var(--text-muted)',
+                      cursor: 'pointer',
+                      padding: '6px',
+                    }}
+                    onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--status-danger)')}
+                    onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text-muted)')}
                   >
                     <Trash2 size={16} />
                   </button>
@@ -161,25 +257,52 @@ export const PlaylistsView: React.FC<PlaylistsViewProps> = ({
 
   // Playlist Grid View
   return (
-    <div className="max-w-[1100px] mx-auto animate-fade-in">
-      <div className="flex items-center justify-between mb-6">
+    <div style={{ maxWidth: '1100px', margin: '0 auto' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px' }}>
         <div>
-          <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-lg bg-blue-500/10 border border-blue-500/30 flex items-center justify-center">
-              <Folder size={20} className="text-blue-500" />
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <div
+              style={{
+                width: '36px',
+                height: '36px',
+                borderRadius: '8px',
+                backgroundColor: 'var(--active-blue-bg)',
+                border: '1px solid var(--active-blue-border)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <Folder size={20} color="var(--primary-blue)" />
             </div>
-            <h1 className="text-2xl font-extrabold tracking-tight text-slate-100">
+            <h1 style={{ fontSize: '24px', fontWeight: '800', letterSpacing: '-0.5px', color: 'var(--text-primary)' }}>
               Koleksi Playlist
             </h1>
           </div>
-          <p className="text-[13px] text-slate-400 mt-1">
+          <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginTop: '4px' }}>
             Kelola daftar putar musik kustom Anda untuk server Discord.
           </p>
         </div>
 
         <button
           onClick={onOpenCreateModal}
-          className="flex items-center gap-2 px-4.5 py-2.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-[13px] font-semibold cursor-pointer shadow-lg shadow-blue-600/25 transition-all"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            padding: '10px 18px',
+            borderRadius: '8px',
+            backgroundColor: 'var(--primary-blue)',
+            color: '#FFFFFF',
+            border: 'none',
+            fontSize: '13px',
+            fontWeight: '600',
+            cursor: 'pointer',
+            boxShadow: '0 4px 14px rgba(57, 120, 246, 0.35)',
+            transition: 'background 0.18s ease',
+          }}
+          onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'var(--hover-blue)')}
+          onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'var(--primary-blue)')}
         >
           <Plus size={16} />
           <span>Buat Playlist Baru</span>
@@ -187,40 +310,103 @@ export const PlaylistsView: React.FC<PlaylistsViewProps> = ({
       </div>
 
       {playlists.length === 0 ? (
-        <div className="py-16 px-5 text-center bg-[#131E30] rounded-xl border border-slate-700/30">
-          <Folder size={44} className="text-slate-500 mx-auto mb-3.5" />
-          <h3 className="text-base font-semibold text-slate-200 mb-1.5">
+        <div
+          style={{
+            padding: '60px 20px',
+            textAlign: 'center',
+            backgroundColor: 'var(--bg-surface)',
+            borderRadius: '12px',
+            border: '1px solid var(--border-subtle)',
+          }}
+        >
+          <Folder size={44} color="var(--text-muted)" style={{ margin: '0 auto 14px auto' }} />
+          <h3 style={{ fontSize: '16px', fontWeight: '600', color: 'var(--text-primary)', marginBottom: '6px' }}>
             Belum ada playlist
           </h3>
-          <p className="text-[13px] text-slate-400 mb-4">
+          <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '16px' }}>
             Buat playlist pertama Anda untuk mengelompokkan lagu favorit.
           </p>
           <button
             onClick={onOpenCreateModal}
-            className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-[13px] font-semibold cursor-pointer transition-colors"
+            style={{
+              padding: '8px 16px',
+              borderRadius: '8px',
+              backgroundColor: 'var(--primary-blue)',
+              color: '#FFFFFF',
+              border: 'none',
+              fontSize: '13px',
+              fontWeight: '600',
+              cursor: 'pointer',
+            }}
           >
             Buat Sekarang
           </button>
         </div>
       ) : (
-        <div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-4.5">
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))',
+            gap: '18px',
+          }}
+        >
           {playlists.map((pl) => (
             <div
               key={pl.id}
               onClick={() => onSelectPlaylist(pl)}
-              className="group bg-[#131E30] hover:bg-[#1A263B] rounded-xl p-4 border border-slate-700/30 flex flex-col cursor-pointer transition-all duration-200 hover:-translate-y-1 hover:shadow-lg hover:shadow-black/30"
+              style={{
+                backgroundColor: 'var(--bg-surface)',
+                borderRadius: '12px',
+                padding: '16px',
+                border: '1px solid var(--border-subtle)',
+                display: 'flex',
+                flexDirection: 'column',
+                cursor: 'pointer',
+                transition: 'transform 0.18s ease, background-color 0.18s ease, box-shadow 0.18s ease',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = 'var(--bg-surface-elevated)';
+                e.currentTarget.style.transform = 'translateY(-3px)';
+                e.currentTarget.style.boxShadow = 'var(--shadow-md)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = 'var(--bg-surface)';
+                e.currentTarget.style.transform = 'translateY(0)';
+                e.currentTarget.style.boxShadow = 'none';
+              }}
             >
-              <div className="w-full aspect-square rounded-lg bg-[#1A263B] group-hover:bg-[#202E46] flex items-center justify-center mb-3 transition-colors">
-                <Folder size={48} className="text-blue-500 group-hover:scale-105 transition-transform" />
+              <div
+                style={{
+                  width: '100%',
+                  aspectRatio: '1/1',
+                  borderRadius: '8px',
+                  backgroundColor: 'var(--bg-surface-secondary)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  marginBottom: '12px',
+                }}
+              >
+                <Folder size={48} color="var(--primary-blue)" />
               </div>
-              <p className="text-[15px] font-bold text-slate-100 truncate" title={pl.name}>
+              <p
+                style={{
+                  fontSize: '15px',
+                  fontWeight: '700',
+                  color: 'var(--text-primary)',
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  margin: 0,
+                }}
+              >
                 {pl.name}
               </p>
-              <div className="flex items-center justify-between mt-1.5">
-                <span className="text-xs text-slate-400">
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '6px' }}>
+                <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
                   {pl.song_count || 0} lagu
                 </span>
-                <span className="text-[11px] text-blue-400 font-semibold group-hover:translate-x-0.5 transition-transform">
+                <span style={{ fontSize: '11px', color: 'var(--soft-blue)', fontWeight: '600' }}>
                   Buka ➔
                 </span>
               </div>
@@ -231,3 +417,4 @@ export const PlaylistsView: React.FC<PlaylistsViewProps> = ({
     </div>
   );
 };
+
