@@ -6,6 +6,7 @@ import discord
 from audio_filter_utils import EQ_BAND_FREQUENCIES, normalize_custom_eq
 import yt_dlp
 
+
 def find_ffmpeg_executable() -> str:
     """Cari ffmpeg di PATH sistem atau lokasi instalasi WinGet secara otomatis."""
     which_ffmpeg = shutil.which("ffmpeg")
@@ -23,34 +24,48 @@ def find_ffmpeg_executable() -> str:
 
     return "ffmpeg"
 
+
 FFMPEG_EXECUTABLE = find_ffmpeg_executable()
+
+# Deteksi otomatis cookies.txt di direktori kerja atau direktori file ini
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+COOKIE_FILE = next(
+    (p for p in [os.path.join(os.getcwd(), "cookies.txt"), os.path.join(BASE_DIR, "cookies.txt")] if os.path.exists(p)),
+    None
+)
+
 
 class YTDLLogger:
     def debug(self, msg):
         pass
+
     def warning(self, msg):
-        pass
+        print(f"[yt-dlp warning] {msg}")
+
     def error(self, msg):
-        pass
+        print(f"[yt-dlp error] {msg}")
+
 
 # Konfigurasi yt-dlp untuk stabilitas streaming audio tinggi dan dukungan playlist
 YTDL_OPTIONS = {
     'format': 'bestaudio/best',
-    'extractaudio': True,
-    'audioformat': 'mp3',
     'outtmpl': '%(extractor)s-%(id)s-%(title)s.%(ext)s',
     'restrictfilenames': True,
     'noplaylist': False,
-    'extract_flat': 'in_playlist',
+    'extract_flat': False,
     'ignoreerrors': True,
     'nocheckcertificate': True,
     'logtostderr': False,
-    'quiet': True,
-    'no_warnings': True,
+    'quiet': False,
+    'no_warnings': False,
     'default_search': 'ytsearch',
     'source_address': '0.0.0.0',
+    'js_runtimes': {'node': {}},
+    'extractor_args': {'youtube': {'player_client': ['web', 'mweb']}},
+    **({'cookiefile': COOKIE_FILE} if COOKIE_FILE else {}),
     'logger': YTDLLogger(),
 }
+
 
 def build_ffmpeg_options(
     seek_seconds: int = 0,
@@ -61,10 +76,14 @@ def build_ffmpeg_options(
     custom_eq: list[int] | None = None,
     vaporwave: bool = False,
     treble: int = 0,
-    karaoke: bool = False
+    karaoke: bool = False,
+    http_headers: dict | None = None
 ) -> tuple[str, str]:
     """Menyusun parameter FFmpeg sebelum dan filter audio (bass boost, nightcore, speed, equalizer, custom EQ, dll.)."""
     before = "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5"
+    if http_headers:
+        header_str = "".join(f"{k}: {v}\r\n" for k, v in http_headers.items())
+        before += f' -headers "{header_str}"'
     if seek_seconds > 0:
         before += f" -ss {seek_seconds}"
 
@@ -121,7 +140,9 @@ def build_ffmpeg_options(
 
     return before, options
 
+
 ytdl = yt_dlp.YoutubeDL(YTDL_OPTIONS)
+
 
 class YTDLSource(discord.PCMVolumeTransformer):
     """
@@ -147,13 +168,15 @@ class YTDLSource(discord.PCMVolumeTransformer):
         def _fetch():
             stream_opts = {
                 'format': 'bestaudio/best',
-                'extractaudio': True,
-                'audioformat': 'mp3',
                 'noplaylist': True,
                 'ignoreerrors': True,
-                'quiet': True,
-                'no_warnings': True,
+                'quiet': False,
+                'no_warnings': False,
                 'nocheckcertificate': True,
+                'source_address': '0.0.0.0',
+                'js_runtimes': {'node': {}},
+                'extractor_args': {'youtube': {'player_client': ['web', 'mweb']}},
+                **({'cookiefile': COOKIE_FILE} if COOKIE_FILE else {}),
                 'logger': YTDLLogger(),
             }
             with yt_dlp.YoutubeDL(stream_opts) as ydl:
@@ -163,7 +186,8 @@ class YTDLSource(discord.PCMVolumeTransformer):
                         valid = [e for e in data['entries'] if e]
                         return valid[0] if valid else None
                     return data
-                except Exception:
+                except Exception as e:
+                    print(f"[get_streamable_data error] {e}")
                     return None
 
         return await loop.run_in_executor(None, _fetch)
@@ -171,7 +195,7 @@ class YTDLSource(discord.PCMVolumeTransformer):
     @classmethod
     async def create_source(cls, search: str, *, loop: asyncio.AbstractEventLoop = None, volume: float = 0.5):
         loop = loop or asyncio.get_event_loop()
-        
+
         # Eksekusi yt-dlp di executor agar tidak memblokir event loop Discord
         partial_extract = functools.partial(ytdl.extract_info, search, download=False)
         data = await loop.run_in_executor(None, partial_extract)
@@ -187,7 +211,7 @@ class YTDLSource(discord.PCMVolumeTransformer):
             data = entries[0]
 
         audio_url = data.get('url')
-        before_opts, filter_opts = build_ffmpeg_options()
+        before_opts, filter_opts = build_ffmpeg_options(http_headers=data.get('http_headers'))
         return cls(
             discord.FFmpegPCMAudio(
                 audio_url,
@@ -318,7 +342,7 @@ class YTDLSource(discord.PCMVolumeTransformer):
         """Mencari hingga N lagu untuk fitur search & selection."""
         loop = loop or asyncio.get_event_loop()
         query = f"ytsearch{max_results}:{search}"
-        
+
         def _fetch():
             search_opts = {
                 'format': 'bestaudio/best',
@@ -327,6 +351,8 @@ class YTDLSource(discord.PCMVolumeTransformer):
                 'quiet': True,
                 'no_warnings': True,
                 'nocheckcertificate': True,
+                'js_runtimes': {'node': {}},
+                **({'cookiefile': COOKIE_FILE} if COOKIE_FILE else {}),
                 'logger': YTDLLogger(),
             }
             with yt_dlp.YoutubeDL(search_opts) as ydl:
