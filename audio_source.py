@@ -48,7 +48,7 @@ class YTDLLogger:
 
 # Konfigurasi yt-dlp untuk stabilitas streaming audio tinggi dan dukungan playlist
 YTDL_OPTIONS = {
-    'format': 'bestaudio/best',
+    'format': 'bestaudio[ext=webm]/bestaudio[ext=m4a]/bestaudio/best',
     'outtmpl': '%(extractor)s-%(id)s-%(title)s.%(ext)s',
     'restrictfilenames': True,
     'noplaylist': False,
@@ -60,8 +60,8 @@ YTDL_OPTIONS = {
     'no_warnings': False,
     'default_search': 'ytsearch',
     'source_address': '0.0.0.0',
-    'js_runtimes': {'node': {}},
-    'extractor_args': {'youtube': {'player_client': ['web', 'mweb']}},
+    'js_runtimes': {'deno': {}, 'node': {}},
+    'remote_components': ['ejs:github'],
     **({'cookiefile': COOKIE_FILE} if COOKIE_FILE else {}),
     'logger': YTDLLogger(),
 }
