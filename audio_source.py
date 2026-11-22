@@ -65,7 +65,7 @@ class YTDLLogger:
 
 # Konfigurasi yt-dlp untuk stabilitas streaming audio tinggi dan dukungan playlist
 YTDL_OPTIONS = {
-    'format': 'bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio/best',
+    'format': 'bestaudio/best',
     'outtmpl': '%(extractor)s-%(id)s-%(title)s.%(ext)s',
     'restrictfilenames': True,
     'noplaylist': False,
@@ -77,8 +77,17 @@ YTDL_OPTIONS = {
     'no_warnings': False,
     'default_search': 'ytsearch',
     'source_address': '0.0.0.0',
-    'extractor_args': _make_extractor_args(),
-    **({'cookiefile': COOKIE_FILE} if COOKIE_FILE else {}),
+    'js_runtimes': {'deno': {}, 'node': {}},
+    'remote_components': ['ejs:github'],
+    
+    # CUKUP tulis client-nya saja. 
+    # Plugin bgutil-provider akan membaca BGUTIL_PROVIDER_URL dari environment Dockge secara otomatis
+    'extractor_args': {
+        'youtube': {
+            'player_client': ['web', 'default']
+        }
+    },
+    
     'logger': YTDLLogger(),
 }
 
@@ -158,6 +167,25 @@ def build_ffmpeg_options(
 
 
 ytdl = yt_dlp.YoutubeDL(YTDL_OPTIONS)
+
+# Daftar Piped API instances sebagai fallback jika yt-dlp diblokir YouTube di VPS/datacenter IP.
+# Piped adalah frontend YouTube open-source yang me-proxy stream — tidak butuh cookies atau PO token.
+_PIPED_INSTANCES = [
+    "https://pipedapi.kavin.rocks",
+    "https://api.piped.yt",
+    "https://piped-api.codeberg.page",
+    "https://piped-api.privacy.com.de",
+    "https://api.piped.projectsegfau.lt",
+]
+
+
+def _extract_youtube_id(url: str) -> str | None:
+    """Ekstrak video ID YouTube dari URL atau kembalikan ID langsung jika sudah bare."""
+    import re
+    if re.match(r'^[A-Za-z0-9_-]{11}$', url):
+        return url
+    m = re.search(r'(?:v=|youtu\.be/|/embed/|/shorts/|/v/)([A-Za-z0-9_-]{11})', url)
+    return m.group(1) if m else None
 
 
 class YTDLSource(discord.PCMVolumeTransformer):
