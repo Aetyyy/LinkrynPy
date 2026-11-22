@@ -41,9 +41,8 @@ class YTDLLogger:
     def error(self, msg):
         print(f"[yt-dlp error] {msg}")
 
-
 YTDL_OPTIONS = {
-    'format': 'bestaudio[ext=webm]/bestaudio[ext=m4a]/bestaudio/best',
+    'format': 'bestaudio/best',
     'outtmpl': '%(extractor)s-%(id)s-%(title)s.%(ext)s',
     'restrictfilenames': True,
     'noplaylist': False,
@@ -57,7 +56,11 @@ YTDL_OPTIONS = {
     'source_address': '0.0.0.0',
     'js_runtimes': {'deno': {}, 'node': {}},
     'remote_components': ['ejs:github'],
-    'extractor_args': {'youtube': youtube_extractor_args},
+    'extractor_args': {
+        'youtube': {
+            'player_client': ['web', 'default']
+        }
+    },
     'logger': YTDLLogger(),
 }
 
