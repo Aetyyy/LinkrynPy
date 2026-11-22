@@ -58,7 +58,8 @@ YTDL_OPTIONS = {
     'remote_components': ['ejs:github'],
     'extractor_args': {
         'youtube': {
-            'player_client': ['web', 'default']
+            'player_client': ['web', 'default'],
+            'po_token': [f"web+http://bgutil-provider:4416"]
         }
     },
     'logger': YTDLLogger(),
