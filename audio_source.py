@@ -34,15 +34,10 @@ COOKIE_FILE = next(
     None
 )
 
-# URL sidecar bgutil PO token provider (diisi via env BGUTIL_PROVIDER_URL di VPS/Docker)
-BGUTIL_PROVIDER_URL = os.getenv("BGUTIL_PROVIDER_URL", "")
-
-def _build_pot_extractor_args(base_clients: list[str]) -> dict:
-    """Tambahkan konfigurasi PO token provider ke extractor_args jika BGUTIL_PROVIDER_URL diset."""
-    args: dict = {"youtube": {"player_client": base_clients}}
-    if BGUTIL_PROVIDER_URL:
-        args["youtubepot-bgutilhttp"] = {"provider_url": [BGUTIL_PROVIDER_URL]}
-    return args
+# Daftar player client YouTube yang dicoba secara berurutan.
+# 'ios' dan 'android_music' tidak memerlukan PO token / BotGuard — aman dipakai di VPS/datacenter IP.
+# 'mweb' dan 'web' memerlukan PO token dari browser nyata, dihindari.
+_YT_PLAYER_CLIENTS = ["ios", "android_music", "tv_embedded"]
 
 
 class YTDLLogger:
@@ -58,7 +53,7 @@ class YTDLLogger:
 
 # Konfigurasi yt-dlp untuk stabilitas streaming audio tinggi dan dukungan playlist
 YTDL_OPTIONS = {
-    'format': 'bestaudio[ext=webm]/bestaudio[ext=m4a]/bestaudio/best',
+    'format': 'bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio/best',
     'outtmpl': '%(extractor)s-%(id)s-%(title)s.%(ext)s',
     'restrictfilenames': True,
     'noplaylist': False,
@@ -70,7 +65,7 @@ YTDL_OPTIONS = {
     'no_warnings': False,
     'default_search': 'ytsearch',
     'source_address': '0.0.0.0',
-    'extractor_args': _build_pot_extractor_args(['web']),
+    'extractor_args': {'youtube': {'player_client': _YT_PLAYER_CLIENTS}},
     **({'cookiefile': COOKIE_FILE} if COOKIE_FILE else {}),
     'logger': YTDLLogger(),
 }
@@ -176,14 +171,14 @@ class YTDLSource(discord.PCMVolumeTransformer):
 
         def _fetch():
             stream_opts = {
-                'format': 'bestaudio/best',
+                'format': 'bestaudio[ext=m4a]/bestaudio/best',
                 'noplaylist': True,
                 'ignoreerrors': True,
                 'quiet': False,
                 'no_warnings': False,
                 'nocheckcertificate': True,
                 'source_address': '0.0.0.0',
-                'extractor_args': _build_pot_extractor_args(['web']),
+                'extractor_args': {'youtube': {'player_client': _YT_PLAYER_CLIENTS}},
                 **({'cookiefile': COOKIE_FILE} if COOKIE_FILE else {}),
                 'logger': YTDLLogger(),
             }
@@ -359,7 +354,7 @@ class YTDLSource(discord.PCMVolumeTransformer):
                 'quiet': True,
                 'no_warnings': True,
                 'nocheckcertificate': True,
-                'js_runtimes': {'node': {}},
+                'extractor_args': {'youtube': {'player_client': _YT_PLAYER_CLIENTS}},
                 **({'cookiefile': COOKIE_FILE} if COOKIE_FILE else {}),
                 'logger': YTDLLogger(),
             }
