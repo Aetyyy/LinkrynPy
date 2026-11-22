@@ -8,12 +8,9 @@ import yt_dlp
 
 
 def find_ffmpeg_executable() -> str:
-    """Cari ffmpeg di PATH sistem atau lokasi instalasi WinGet secara otomatis."""
     which_ffmpeg = shutil.which("ffmpeg")
     if which_ffmpeg:
         return which_ffmpeg
-
-    # Cek lokasi WinGet default di Windows
     localappdata = os.environ.get("LOCALAPPDATA", "")
     if localappdata:
         winget_path = os.path.join(localappdata, "Microsoft", "WinGet", "Packages")
@@ -21,51 +18,32 @@ def find_ffmpeg_executable() -> str:
             for root, dirs, files in os.walk(winget_path):
                 if "ffmpeg.exe" in files:
                     return os.path.join(root, "ffmpeg.exe")
-
     return "ffmpeg"
 
 
 FFMPEG_EXECUTABLE = find_ffmpeg_executable()
 
-# Deteksi otomatis cookies.txt di direktori kerja atau direktori file ini
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-COOKIE_FILE = next(
-    (p for p in [os.path.join(os.getcwd(), "cookies.txt"), os.path.join(BASE_DIR, "cookies.txt")] if os.path.exists(p)),
-    None
-)
-
-# URL sidecar bgutil PO token provider — wajib di VPS/datacenter agar YouTube tidak memblokir.
-# Diisi via environment variable BGUTIL_PROVIDER_URL (lihat docker-compose.yml).
-BGUTIL_PROVIDER_URL = os.getenv("BGUTIL_PROVIDER_URL", "")
-
-def _make_extractor_args() -> dict:
-    """Bangun extractor_args yt-dlp.
-    - Jika BGUTIL_PROVIDER_URL tersedia: pakai 'web' client + bgutil PO token provider.
-    - Jika tidak: pakai 'ios' sebagai fallback (hanya works di IP non-datacenter).
-    """
-    if BGUTIL_PROVIDER_URL:
-        return {
-            "youtube": {"player_client": ["web"]},
-            "youtubepot-bgutilhttp": {"provider_url": [BGUTIL_PROVIDER_URL]},
-        }
-    # Fallback lokal (dev): ios masih ok di IP rumah/kantor
-    return {"youtube": {"player_client": ["ios", "web"]}}
+# -------------------------------------------------------------
+# LOGIKA PO-TOKEN & BGUTIL PROVIDER
+# -------------------------------------------------------------
+bgutil_url = os.environ.get("BGUTIL_PROVIDER_URL")
+youtube_extractor_args = {'player_client': ['web', 'default']}
+if bgutil_url:
+    # Memaksa yt-dlp mengambil token dari bgutil-provider
+    youtube_extractor_args['po_token'] = [f"web+{bgutil_url}"]
 
 
 class YTDLLogger:
     def debug(self, msg):
         pass
-
     def warning(self, msg):
         print(f"[yt-dlp warning] {msg}")
-
     def error(self, msg):
         print(f"[yt-dlp error] {msg}")
 
 
-# Konfigurasi yt-dlp untuk stabilitas streaming audio tinggi dan dukungan playlist
 YTDL_OPTIONS = {
-    'format': 'bestaudio/best',
+    'format': 'bestaudio[ext=webm]/bestaudio[ext=m4a]/bestaudio/best',
     'outtmpl': '%(extractor)s-%(id)s-%(title)s.%(ext)s',
     'restrictfilenames': True,
     'noplaylist': False,
@@ -79,15 +57,7 @@ YTDL_OPTIONS = {
     'source_address': '0.0.0.0',
     'js_runtimes': {'deno': {}, 'node': {}},
     'remote_components': ['ejs:github'],
-    
-    # CUKUP tulis client-nya saja. 
-    # Plugin bgutil-provider akan membaca BGUTIL_PROVIDER_URL dari environment Dockge secara otomatis
-    'extractor_args': {
-        'youtube': {
-            'player_client': ['web', 'default']
-        }
-    },
-    
+    'extractor_args': {'youtube': youtube_extractor_args},
     'logger': YTDLLogger(),
 }
 
@@ -104,17 +74,15 @@ def build_ffmpeg_options(
     karaoke: bool = False,
     http_headers: dict | None = None
 ) -> tuple[str, str]:
-    """Menyusun parameter FFmpeg sebelum dan filter audio (bass boost, nightcore, speed, equalizer, custom EQ, dll.)."""
     before = "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5"
     if http_headers:
-        header_str = "".join(f"{k}: {v}\r\n" for k, v in http_headers.items())
-        before += f' -headers "{header_str}"'
+        header_lines = "".join(f"{k}: {v}\r\n" for k, v in http_headers.items())
+        before += f' -headers "{header_lines}"'
     if seek_seconds > 0:
         before += f" -ss {seek_seconds}"
 
     filters = []
 
-    # 1. Bass Boost (Dukung penamaan low/soft, medium, high/hard, dan extreme)
     if bass_boost in ("low", "soft"):
         filters.append("bass=g=3:f=110:w=0.6")
     elif bass_boost == "medium":
@@ -124,7 +92,6 @@ def build_ffmpeg_options(
     elif bass_boost == "extreme":
         filters.append("bass=g=12:f=110:w=0.6")
 
-    # 2. Ten-band EQ, with careful presets and support for old five-band settings.
     preset_bands = {
         "off": [0] * 10,
         "pop": [2, 1, 0, 2, 3, 3, 1, 2, 2, 1],
@@ -139,15 +106,12 @@ def build_ffmpeg_options(
         if gain:
             filters.append(f"equalizer=f={frequency}:t=q:w=1:g={gain}")
 
-    # 3. Treble Booster / Reducer
     if treble != 0:
         filters.append(f"treble=g={treble}:f=3000:w=0.5")
 
-    # 4. Karaoke (Vocal Remover dengan peredaman center mono phase yang aman di FFmpeg)
     if karaoke:
         filters.append("stereotools=mlev=0.03:slev=1.4")
 
-    # 5. Pitch & Tempo (Nightcore / Vaporwave / Speed)
     if vaporwave:
         filters.append("aresample=48000,asetrate=48000*0.8,atempo=1.0")
     elif nightcore:
@@ -156,7 +120,6 @@ def build_ffmpeg_options(
         clamped_speed = max(0.5, min(speed, 2.0))
         filters.append(f"atempo={clamped_speed}")
 
-    # Keep EQ boosts from clipping while preserving the source's dynamics.
     filters.append("alimiter=limit=0.95:attack=5:release=50:level=0:latency=1")
 
     options = "-vn"
@@ -168,30 +131,8 @@ def build_ffmpeg_options(
 
 ytdl = yt_dlp.YoutubeDL(YTDL_OPTIONS)
 
-# Daftar Piped API instances sebagai fallback jika yt-dlp diblokir YouTube di VPS/datacenter IP.
-# Piped adalah frontend YouTube open-source yang me-proxy stream — tidak butuh cookies atau PO token.
-_PIPED_INSTANCES = [
-    "https://pipedapi.kavin.rocks",
-    "https://api.piped.yt",
-    "https://piped-api.codeberg.page",
-    "https://piped-api.privacy.com.de",
-    "https://api.piped.projectsegfau.lt",
-]
-
-
-def _extract_youtube_id(url: str) -> str | None:
-    """Ekstrak video ID YouTube dari URL atau kembalikan ID langsung jika sudah bare."""
-    import re
-    if re.match(r'^[A-Za-z0-9_-]{11}$', url):
-        return url
-    m = re.search(r'(?:v=|youtu\.be/|/embed/|/shorts/|/v/)([A-Za-z0-9_-]{11})', url)
-    return m.group(1) if m else None
-
 
 class YTDLSource(discord.PCMVolumeTransformer):
-    """
-    Wrapper untuk audio streaming dari YouTube / URL lain menggunakan yt-dlp & FFmpeg.
-    """
     def __init__(self, source: discord.AudioSource, *, data: dict, volume: float = 0.5):
         super().__init__(source, volume)
         self.data = data
@@ -203,7 +144,6 @@ class YTDLSource(discord.PCMVolumeTransformer):
 
     @classmethod
     async def get_streamable_data(cls, webpage_or_id: str, *, loop: asyncio.AbstractEventLoop = None):
-        """Mengekstrak stream URL langsung (audio direct URL) saat lagu akan diputar."""
         loop = loop or asyncio.get_event_loop()
         target_url = webpage_or_id
         if "music.youtube.com" in target_url:
@@ -211,15 +151,16 @@ class YTDLSource(discord.PCMVolumeTransformer):
 
         def _fetch():
             stream_opts = {
-                'format': 'bestaudio[ext=m4a]/bestaudio/best',
+                'format': 'bestaudio[ext=webm]/bestaudio[ext=m4a]/bestaudio/best',
                 'noplaylist': True,
                 'ignoreerrors': True,
                 'quiet': False,
                 'no_warnings': False,
                 'nocheckcertificate': True,
                 'source_address': '0.0.0.0',
-                'extractor_args': _make_extractor_args(),
-                **({'cookiefile': COOKIE_FILE} if COOKIE_FILE else {}),
+                'js_runtimes': {'deno': {}, 'node': {}},
+                'remote_components': ['ejs:github'],
+                'extractor_args': {'youtube': youtube_extractor_args},
                 'logger': YTDLLogger(),
             }
             with yt_dlp.YoutubeDL(stream_opts) as ydl:
@@ -238,15 +179,12 @@ class YTDLSource(discord.PCMVolumeTransformer):
     @classmethod
     async def create_source(cls, search: str, *, loop: asyncio.AbstractEventLoop = None, volume: float = 0.5):
         loop = loop or asyncio.get_event_loop()
-
-        # Eksekusi yt-dlp di executor agar tidak memblokir event loop Discord
         partial_extract = functools.partial(ytdl.extract_info, search, download=False)
         data = await loop.run_in_executor(None, partial_extract)
 
         if data is None:
             return None
 
-        # Jika hasil adalah search query (ytsearch) atau playlist
         if 'entries' in data:
             entries = [e for e in data['entries'] if e is not None]
             if not entries:
@@ -254,6 +192,9 @@ class YTDLSource(discord.PCMVolumeTransformer):
             data = entries[0]
 
         audio_url = data.get('url')
+        if not audio_url:
+            return None
+
         before_opts, filter_opts = build_ffmpeg_options(http_headers=data.get('http_headers'))
         return cls(
             discord.FFmpegPCMAudio(
@@ -268,13 +209,10 @@ class YTDLSource(discord.PCMVolumeTransformer):
 
     @classmethod
     async def fetch_music_metadata(cls, query: str) -> dict | None:
-        """Mengambil metadata resmi lagu (Title, Artist, Album, Duration) dari iTunes Search API,
-        fallback ke LRCLIB dan Deezer API tanpa auth kompleks."""
         import urllib.parse
         import re
         try:
             import aiohttp
-            # Bersihkan query dari noise kata-kata video/audio ekstra
             clean_q = re.sub(r'[\(\[\{][^\)\]\}]*[\)\]\}]', '', query)
             clean_q = re.sub(r'(?i)\b(official|music\s+video|video|audio|lyrics?|lyric\s+video|mv|4k|hd|remastered)\b', '', clean_q)
             clean_q = re.sub(r'\s+', ' ', clean_q).strip(' -•|')
@@ -282,7 +220,6 @@ class YTDLSource(discord.PCMVolumeTransformer):
             headers = {'User-Agent': 'LinkrynMusicBot/2.0 (Mozilla/5.0)'}
 
             async with aiohttp.ClientSession(headers=headers) as session:
-                # 1. Prioritas Utama: iTunes Search API (cepat, CDN global, akurat milidetik)
                 try:
                     itunes_url = f"https://itunes.apple.com/search?term={urllib.parse.quote(search_term)}&media=music&entity=song&limit=4"
                     async with session.get(itunes_url, timeout=aiohttp.ClientTimeout(total=2.5)) as r:
@@ -303,7 +240,6 @@ class YTDLSource(discord.PCMVolumeTransformer):
                 except Exception:
                     pass
 
-                # 2. Fallback: LRCLIB API (/api/get jika ada ' - ', lalu /api/search)
                 try:
                     if ' - ' in search_term:
                         parts = search_term.split(' - ', 1)
@@ -343,7 +279,6 @@ class YTDLSource(discord.PCMVolumeTransformer):
                 except Exception:
                     pass
 
-                # 3. Fallback: Deezer API
                 try:
                     deezer_url = f"https://api.deezer.com/search?q={urllib.parse.quote(search_term)}&limit=3"
                     async with session.get(deezer_url, timeout=aiohttp.ClientTimeout(total=2.5)) as resp:
@@ -369,7 +304,6 @@ class YTDLSource(discord.PCMVolumeTransformer):
 
     @classmethod
     async def fetch_lrclib_info(cls, query: str) -> dict | None:
-        """Mengambil metadata lagu studio asli dan durasi dari LRCLIB API (backward-compatible)."""
         meta = await cls.fetch_music_metadata(query)
         if meta:
             return {
@@ -382,7 +316,6 @@ class YTDLSource(discord.PCMVolumeTransformer):
 
     @classmethod
     async def extract_search_list(cls, search: str, max_results: int = 5, *, loop: asyncio.AbstractEventLoop = None):
-        """Mencari hingga N lagu untuk fitur search & selection."""
         loop = loop or asyncio.get_event_loop()
         query = f"ytsearch{max_results}:{search}"
 
@@ -394,8 +327,9 @@ class YTDLSource(discord.PCMVolumeTransformer):
                 'quiet': True,
                 'no_warnings': True,
                 'nocheckcertificate': True,
-                'extractor_args': _make_extractor_args(),
-                **({'cookiefile': COOKIE_FILE} if COOKIE_FILE else {}),
+                'js_runtimes': {'deno': {}, 'node': {}},
+                'remote_components': ['ejs:github'],
+                'extractor_args': {'youtube': youtube_extractor_args},
                 'logger': YTDLLogger(),
             }
             with yt_dlp.YoutubeDL(search_opts) as ydl:
@@ -411,15 +345,11 @@ class YTDLSource(discord.PCMVolumeTransformer):
 
     @classmethod
     async def extract_info(cls, search: str, *, loop: asyncio.AbstractEventLoop = None):
-        """Mengekstrak informasi lagu atau playlist tanpa membuat AudioSource langsung.
-        Memprioritaskan audio studio murni (Topic / Official Audio) dan sinkronisasi durasi LRCLIB (selisih <= 2s).
-        """
         loop = loop or asyncio.get_event_loop()
         target = search
         if "music.youtube.com" in target:
             target = target.replace("music.youtube.com", "www.youtube.com")
 
-        # Jika input adalah URL langsung (YouTube/SoundCloud/Spotify dll.)
         is_direct_url = target.startswith("http://") or target.startswith("https://")
         if is_direct_url:
             def _fetch_direct():
@@ -435,15 +365,12 @@ class YTDLSource(discord.PCMVolumeTransformer):
                         return None
             return await loop.run_in_executor(None, _fetch_direct)
 
-        # Jika input adalah kata kunci pencarian (search query):
-        # 1. Cek metadata resmi (Title, Artist, Album, Duration) dari iTunes / LRCLIB / Deezer API
         meta = await cls.fetch_music_metadata(target)
         meta_dur = float(meta.get("duration") or 0.0) if meta else None
         meta_artist = meta.get("artist") if meta else None
         meta_title = meta.get("title") if meta else None
 
         def _fetch_search():
-            # Bentuk beberapa kandidat query pencarian dengan prioritas studio audio / Auto-generated / Topic
             query_candidates = []
             if meta_artist and meta_title:
                 query_candidates.append(f"ytsearch5:{meta_artist} - {meta_title} Auto-generated by YouTube")
@@ -468,7 +395,6 @@ class YTDLSource(discord.PCMVolumeTransformer):
                             for ent in res['entries']:
                                 if ent and ent.get('id') and ent not in collected_entries:
                                     collected_entries.append(ent)
-                                    # Cek langsung: jika selisih durasi kurang dari 2 detik dari metadata resmi
                                     if meta_dur and meta_dur > 0:
                                         ent_dur = float(ent.get('duration') or 0.0)
                                         if ent_dur > 0 and abs(ent_dur - meta_dur) < 2.0:
@@ -476,14 +402,12 @@ class YTDLSource(discord.PCMVolumeTransformer):
                                             ent['official_duration'] = meta_dur
                                             ent['lrclib_duration'] = meta_dur
                                             return ent
-                        # Jika sudah mengumpulkan cukup entri, hentikan iterasi query
                         if len(collected_entries) >= 6:
                             break
                     except Exception:
                         continue
 
                 if not collected_entries:
-                    # Fallback ke default extract_info target biasa
                     try:
                         res = ydl.extract_info(target, download=False)
                         if res and meta:
@@ -501,7 +425,6 @@ class YTDLSource(discord.PCMVolumeTransformer):
                     except Exception:
                         return None
 
-                # Prioritas 1: Selisih durasi kurang dari 2 detik dari durasi metadata resmi
                 if meta_dur and meta_dur > 0:
                     for ent in collected_entries:
                         ent_dur = float(ent.get('duration') or 0.0)
@@ -511,7 +434,6 @@ class YTDLSource(discord.PCMVolumeTransformer):
                             ent['lrclib_duration'] = meta_dur
                             return ent
 
-                # Prioritas 2: Cari entri dengan channel '- Topic' atau judul ber-keyword 'Official Audio'
                 for ent in collected_entries:
                     uploader = str(ent.get('uploader') or ent.get('channel') or '').lower()
                     title = str(ent.get('title') or '').lower()
@@ -522,7 +444,6 @@ class YTDLSource(discord.PCMVolumeTransformer):
                             ent['lrclib_duration'] = meta_dur
                         return ent
 
-                # Prioritas 3: Kembalikan entri valid teratas
                 best_ent = collected_entries[0]
                 if meta:
                     best_ent['official_metadata'] = meta
