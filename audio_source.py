@@ -34,6 +34,16 @@ COOKIE_FILE = next(
     None
 )
 
+# URL sidecar bgutil PO token provider (diisi via env BGUTIL_PROVIDER_URL di VPS/Docker)
+BGUTIL_PROVIDER_URL = os.getenv("BGUTIL_PROVIDER_URL", "")
+
+def _build_pot_extractor_args(base_clients: list[str]) -> dict:
+    """Tambahkan konfigurasi PO token provider ke extractor_args jika BGUTIL_PROVIDER_URL diset."""
+    args: dict = {"youtube": {"player_client": base_clients}}
+    if BGUTIL_PROVIDER_URL:
+        args["youtubepot-bgutilhttp"] = {"provider_url": [BGUTIL_PROVIDER_URL]}
+    return args
+
 
 class YTDLLogger:
     def debug(self, msg):
@@ -60,8 +70,7 @@ YTDL_OPTIONS = {
     'no_warnings': False,
     'default_search': 'ytsearch',
     'source_address': '0.0.0.0',
-    'js_runtimes': {'deno': {}, 'node': {}},
-    'remote_components': ['ejs:github'],
+    'extractor_args': _build_pot_extractor_args(['web']),
     **({'cookiefile': COOKIE_FILE} if COOKIE_FILE else {}),
     'logger': YTDLLogger(),
 }
@@ -174,8 +183,7 @@ class YTDLSource(discord.PCMVolumeTransformer):
                 'no_warnings': False,
                 'nocheckcertificate': True,
                 'source_address': '0.0.0.0',
-                'js_runtimes': {'node': {}},
-                'extractor_args': {'youtube': {'player_client': ['web', 'mweb']}},
+                'extractor_args': _build_pot_extractor_args(['web']),
                 **({'cookiefile': COOKIE_FILE} if COOKIE_FILE else {}),
                 'logger': YTDLLogger(),
             }

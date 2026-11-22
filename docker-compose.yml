@@ -1,0 +1,27 @@
+version: '3.8'
+
+services:
+  # Sidecar PO Token Provider — wajib untuk menghindari YouTube bot detection di VPS/datacenter IP
+  bgutil-provider:
+    image: brainicism/bgutil-ytdlp-pot-provider:latest
+    container_name: bgutil-provider
+    restart: unless-stopped
+    ports:
+      - "4416:4416"
+    # Tidak perlu volume atau env khusus; service akan self-manage token cache
+
+  linkryn-bot:
+    build: .
+    container_name: linkryn-bot
+    restart: unless-stopped
+    depends_on:
+      - bgutil-provider
+    env_file:
+      - .env
+    environment:
+      # URL internal Docker network ke sidecar PO token provider
+      - BGUTIL_PROVIDER_URL=http://bgutil-provider:4416
+    volumes:
+      # Pasang cookies.txt jika tersedia (opsional, tapi membantu di IP yang sangat dibatasi)
+      # Hapus baris di bawah jika tidak punya cookies.txt
+      - ./cookies.txt:/app/cookies.txt:ro
