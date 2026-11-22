@@ -34,10 +34,22 @@ COOKIE_FILE = next(
     None
 )
 
-# Daftar player client YouTube yang dicoba secara berurutan.
-# 'ios' dan 'android_music' tidak memerlukan PO token / BotGuard — aman dipakai di VPS/datacenter IP.
-# 'mweb' dan 'web' memerlukan PO token dari browser nyata, dihindari.
-_YT_PLAYER_CLIENTS = ["ios", "android_music", "tv_embedded"]
+# URL sidecar bgutil PO token provider — wajib di VPS/datacenter agar YouTube tidak memblokir.
+# Diisi via environment variable BGUTIL_PROVIDER_URL (lihat docker-compose.yml).
+BGUTIL_PROVIDER_URL = os.getenv("BGUTIL_PROVIDER_URL", "")
+
+def _make_extractor_args() -> dict:
+    """Bangun extractor_args yt-dlp.
+    - Jika BGUTIL_PROVIDER_URL tersedia: pakai 'web' client + bgutil PO token provider.
+    - Jika tidak: pakai 'ios' sebagai fallback (hanya works di IP non-datacenter).
+    """
+    if BGUTIL_PROVIDER_URL:
+        return {
+            "youtube": {"player_client": ["web"]},
+            "youtubepot-bgutilhttp": {"provider_url": [BGUTIL_PROVIDER_URL]},
+        }
+    # Fallback lokal (dev): ios masih ok di IP rumah/kantor
+    return {"youtube": {"player_client": ["ios", "web"]}}
 
 
 class YTDLLogger:
@@ -65,7 +77,7 @@ YTDL_OPTIONS = {
     'no_warnings': False,
     'default_search': 'ytsearch',
     'source_address': '0.0.0.0',
-    'extractor_args': {'youtube': {'player_client': _YT_PLAYER_CLIENTS}},
+    'extractor_args': _make_extractor_args(),
     **({'cookiefile': COOKIE_FILE} if COOKIE_FILE else {}),
     'logger': YTDLLogger(),
 }
@@ -178,7 +190,7 @@ class YTDLSource(discord.PCMVolumeTransformer):
                 'no_warnings': False,
                 'nocheckcertificate': True,
                 'source_address': '0.0.0.0',
-                'extractor_args': {'youtube': {'player_client': _YT_PLAYER_CLIENTS}},
+                'extractor_args': _make_extractor_args(),
                 **({'cookiefile': COOKIE_FILE} if COOKIE_FILE else {}),
                 'logger': YTDLLogger(),
             }
@@ -354,7 +366,7 @@ class YTDLSource(discord.PCMVolumeTransformer):
                 'quiet': True,
                 'no_warnings': True,
                 'nocheckcertificate': True,
-                'extractor_args': {'youtube': {'player_client': _YT_PLAYER_CLIENTS}},
+                'extractor_args': _make_extractor_args(),
                 **({'cookiefile': COOKIE_FILE} if COOKIE_FILE else {}),
                 'logger': YTDLLogger(),
             }
